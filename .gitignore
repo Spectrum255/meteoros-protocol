@@ -71,3 +71,12 @@ libs/xaerolib*.jar
 ### Third-party reference assets extracted from other mods ###
 docs/reference/mekanism-gui/
 
+### Local bookkeeping / scratch assets ###
+docs/last-ai-change.json
+docs/last-ai-response.txt
+art/_discarded/
+art/_tex/
+
+### Design documents stay local (not published) ###
+/docs/
+

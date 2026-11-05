@@ -69,7 +69,7 @@ Third-party jars used for compilation live in `libs/`:
 
 ## License / 许可
 
-[MIT](LICENSE) © 2026 alnsuni
+[MIT](LICENSE) © 2026 Spectrum255
 
 ## Credits
 
