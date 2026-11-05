@@ -1,0 +1,8 @@
+{
+  "variants": {
+    "facing=north": { "model": "meteorosprotocol:block/particle_intake" },
+    "facing=east": { "model": "meteorosprotocol:block/particle_intake", "y": 90 },
+    "facing=south": { "model": "meteorosprotocol:block/particle_intake", "y": 180 },
+    "facing=west": { "model": "meteorosprotocol:block/particle_intake", "y": 270 }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "meteorosprotocol:item/infinite_particle_canister"
+  }
+}

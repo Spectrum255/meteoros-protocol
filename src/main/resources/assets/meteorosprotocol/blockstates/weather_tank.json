@@ -1,0 +1,8 @@
+{
+  "variants": {
+    "facing=north": { "model": "meteorosprotocol:block/weather_tank" },
+    "facing=east": { "model": "meteorosprotocol:block/weather_tank", "y": 90 },
+    "facing=south": { "model": "meteorosprotocol:block/weather_tank", "y": 180 },
+    "facing=west": { "model": "meteorosprotocol:block/weather_tank", "y": 270 }
+  }
+}

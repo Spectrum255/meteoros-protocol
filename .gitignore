@@ -1,0 +1,73 @@
+### Gradle ###
+.gradle
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/**/build/
+
+### IntelliJ IDEA ###
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+!**/src/**/out/
+
+.run/
+
+### Eclipse ###
+.apt_generated
+.classpath
+.eclipse/
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+bin/
+!**/src/**/bin/
+
+### VS Code ###
+.vscode/
+
+### Mac OS ###
+.DS_Store
+
+### Minecraft Modding ###
+run/
+!**/src/**/run/
+**/src/generated/**/.cache/
+repo/
+!**/src/**/repo/
+
+### Local development (not part of the mod) ###
+.tmp-reference/
+.modmind/
+modmind.*
+AI模组开发效率工具包/
+.agents/
+*.memory.md
+气象协议-设计-*.md
+气象协议-建模-*.md
+气象协议-美术-*.md
+/*.bbmodel
+TEMPLATE_LICENSE.txt
+
+### Python caches / art scratch files ###
+__pycache__/
+*.pyc
+art/mcp-capture-*.png
+art/_*.png
+art/**/_tmp-*.png
+
+### Backups ###
+*.bak
+*.bak-*
+*.orig
+
+### Third-party jars that must not be redistributed ###
+libs/xaero*.jar
+libs/xaerolib*.jar
+
+### Third-party reference assets extracted from other mods ###
+docs/reference/mekanism-gui/
+
