@@ -1,20 +1,42 @@
-<#
+﻿<#
   make-test-jar.ps1 — 把 build/libs 的正式 jar 打成可在 NeoForge 21.1.234 测试实例里跑的 test jar。
 
   做的事：复制正式 jar，把【外层】与【内嵌 localizedrain】两个 neoforge.mods.toml 里的
   版本下限 [21.1.265,) 改成 [21.1.234,)，写进测试实例 mods 目录，旧文件留 .bak-<时间戳> 备份。
 
+  版本化：jar 名与目标名都从 jar 文件名里的版本号派生（meteorosprotocol-<ver>.jar
+  → meteorosprotocol-<ver>-test.jar）。改 gradle.properties 的 mod_version 后无需改脚本。
+  为避免同一个 mod 被加载两次，落地前会把 mods 目录里**其它** meteorosprotocol-*-test.jar
+  改名为 *.bak-<时间戳>（不再是 .jar 后缀，游戏不会加载）。
+
   只用于本机测试；正式发布物仍是 build/libs 里的原样 jar（265）。
 
   用法：
-    .\tools\make-test-jar.ps1
-    .\tools\make-test-jar.ps1 -Jar build\libs\meteorosprotocol-1.0.0.jar -NoBackup
+    .\tools\make-test-jar.ps1                      # 自动取 build/libs 里最新的 meteorosprotocol-*.jar
+    .\tools\make-test-jar.ps1 -Jar build\libs\meteorosprotocol-0.0.1.jar -NoBackup
 #>
 param(
-  [string]$Jar  = 'build\libs\meteorosprotocol-1.0.0.jar',
-  [string]$Dest = 'D:\mc\.minecraft\versions\Meteoros Test\mods\meteorosprotocol-1.0.0-test.jar',
+  [string]$Jar  = '',
+  [string]$Dest = '',
   [switch]$NoBackup
 )
+
+$ErrorActionPreference = 'Stop'
+
+if (-not $Jar) {
+  $cand = Get-ChildItem -Path 'build\libs' -Filter 'meteorosprotocol-*.jar' -File -ErrorAction SilentlyContinue |
+          Where-Object { $_.Name -notmatch '-(sources|javadoc)\.jar$' } |
+          Sort-Object LastWriteTime -Descending | Select-Object -First 1
+  if (-not $cand) { throw 'build\libs 里没有 meteorosprotocol-*.jar，先构建' }
+  $Jar = $cand.FullName
+}
+
+$ver = [regex]::Match((Split-Path $Jar -Leaf), '^meteorosprotocol-(.+)\.jar$').Groups[1].Value
+if (-not $ver) { throw "jar 名不是 meteorosprotocol-<version>.jar: $Jar" }
+if (-not $Dest) { $Dest = "D:\mc\.minecraft\versions\Meteoros Test\mods\meteorosprotocol-$ver-test.jar" }
+Write-Host "源 jar  : $Jar"
+Write-Host "版本号  : $ver"
+Write-Host "目标    : $Dest"
 
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -86,6 +108,18 @@ if ((Test-Path $Dest) -and -not $NoBackup) {
   Copy-Item $Dest $bak -Force
   Write-Host "备份旧 jar -> $bak ($((Get-Item $bak).Length) B)"
 }
+# 同一 mod 只允许一个 jar：把别的 meteorosprotocol-*-test.jar 改名成 .bak-<时间戳>（不再是 .jar 后缀）
+$stale = Get-ChildItem -Path $modsDir -Filter 'meteorosprotocol-*-test.jar' -File -ErrorAction SilentlyContinue |
+         Where-Object { $_.FullName -ne (Join-Path $modsDir (Split-Path $Dest -Leaf)) }
+$raw = @(Get-ChildItem -Path $modsDir -Filter 'meteorosprotocol-*-test.jar' -File -ErrorAction SilentlyContinue)
+$destFull = Join-Path $modsDir (Split-Path $Dest -Leaf)
+$stale = @($raw | Where-Object { $_.FullName -ne $destFull })
+foreach ($o in $stale) {
+  $newName = $o.FullName + '.bak-' + (Get-Date -Format 'yyyyMMdd-HHmmss')
+  Move-Item -LiteralPath $o.FullName -Destination $newName -Force
+  Write-Host "移出旧版本 jar -> $newName"
+}
+
 Copy-Item $tmp $Dest -Force
 Remove-Item $tmp -Force
 $d = Get-Item $Dest

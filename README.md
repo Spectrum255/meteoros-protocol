@@ -60,6 +60,14 @@ Third-party jars used for compilation live in `libs/`:
 ./gradlew runClient   # first launch needs a run/ directory and accepts the Minecraft EULA
 ```
 
+## Versioning / 版本号规则
+
+- 起始版本 **0.0.1**（`gradle.properties` 的 `mod_version`）。
+- 之后**每次成功构建、且包含新内容**（新方块/物品/机制/GUI/资源接入等）时，末位 +1：
+  `0.0.1 → 0.0.2 → 0.0.3 …`。
+- 纯文档、注释、CI 配置、重构但不改变可玩内容的构建不升版本。
+- 若将来出现需要玩家注意的破坏性变更（存档格式、配方 ID），再启用 `0.1.0` 这一级。
+
 ## Known limitations / 已知限制
 
 - 尚未做完整的游戏内验证（机器 tick、NBT 往返、多人环境均未实测）。
