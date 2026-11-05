@@ -1,0 +1,214 @@
+package com.spectrum255.meteorosprotocol.menu;
+
+import com.spectrum255.meteorosprotocol.client.gui.IntakeLayout;
+import com.spectrum255.meteorosprotocol.machine.MachineBlock;
+import com.spectrum255.meteorosprotocol.machine.MachineBlockEntity;
+import com.spectrum255.meteorosprotocol.particle.Phase;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ContainerData;
+import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.ItemStack;
+
+/**
+ * Shared status menu for the machines without their own layout (thermal
+ * generator, phase separator, weather station, weather tank). It has no item
+ * slots: the synced ints are, in order, 0 energy, 1 flags (bit 0 enabled,
+ * bits 1-2 redstone mode, bit 3 active), 2 mixed total, one slot per phase in
+ * the mixed buffer, then one slot per phase tank. With six core phases this is
+ * 15 ints; addon phases widen it automatically.
+ */
+public class MachineStatusMenu extends AbstractContainerMenu {
+    public static final int ENERGY_CAPACITY = 100_000;
+
+    private final BlockPos pos;
+    private final MachineBlockEntity machine;
+    private final boolean clientSide;
+    private final int[] syncedData;
+    private final int phaseCount;
+    private final int mixedBase = 3;
+    private final int tankBase;
+    private ContainerData data;
+
+    /** 3 header ints + mixed buffer + phase tanks. */
+    public static int dataCount() {
+        return 3 + 2 * Phase.all().size();
+    }
+
+    public MachineStatusMenu(int containerId, Inventory inventory, MachineBlockEntity machine) {
+        this(containerId, inventory, machine.getBlockPos(), machine);
+    }
+
+    public MachineStatusMenu(int containerId, Inventory inventory, RegistryFriendlyByteBuf extraData) {
+        this(containerId, inventory, extraData.readBlockPos(), null);
+    }
+
+    private MachineStatusMenu(int containerId, Inventory inventory, BlockPos pos, MachineBlockEntity machine) {
+        super(com.spectrum255.meteorosprotocol.MeteorosProtocol.MACHINE_STATUS_MENU.get(), containerId);
+        this.pos = pos;
+        this.clientSide = inventory.player.level().isClientSide();
+        this.machine = machine != null
+                ? machine
+                : (inventory.player.level().getBlockEntity(pos) instanceof MachineBlockEntity found ? found : null);
+        this.phaseCount = Phase.all().size();
+        this.tankBase = mixedBase + phaseCount;
+        this.syncedData = new int[dataCount()];
+
+        for (int row = 0; row < 3; row++) {
+            for (int col = 0; col < 9; col++) {
+                this.addSlot(new Slot(inventory, col + row * 9 + 9,
+                        IntakeLayout.INVENTORY_X + col * IntakeLayout.INVENTORY_STEP,
+                        IntakeLayout.INVENTORY_Y + row * IntakeLayout.INVENTORY_STEP));
+            }
+        }
+        for (int col = 0; col < 9; col++) {
+            this.addSlot(new Slot(inventory, col,
+                    IntakeLayout.INVENTORY_X + col * IntakeLayout.INVENTORY_STEP,
+                    IntakeLayout.HOTBAR_Y));
+        }
+
+        this.data = new ContainerData() {
+            @Override
+            public int get(int index) {
+                return clientSide ? syncedData[index] : serverValue(index);
+            }
+
+            @Override
+            public void set(int index, int value) {
+                if (clientSide) {
+                    syncedData[index] = value;
+                }
+            }
+
+            @Override
+            public int getCount() {
+                return syncedData.length;
+            }
+        };
+        this.addDataSlots(data);
+    }
+
+    private int serverValue(int index) {
+        if (machine == null) {
+            return 0;
+        }
+        if (index == 0) {
+            return (int) Math.min(Integer.MAX_VALUE, machine.energy());
+        }
+        if (index == 1) {
+            int flags = machine.isEnabled() ? 1 : 0;
+            flags |= machine.redstoneMode().ordinal() << 1;
+            flags |= activeFlag() ? 8 : 0;
+            return flags;
+        }
+        if (index == 2) {
+            return (int) Math.min(Integer.MAX_VALUE, machine.getTotal());
+        }
+        if (index >= mixedBase && index < tankBase) {
+            return (int) Math.min(Integer.MAX_VALUE,
+                    machine.getAmount(Phase.all().get(index - mixedBase)));
+        }
+        if (index >= tankBase && index < tankBase + phaseCount) {
+            return (int) Math.min(Integer.MAX_VALUE,
+                    machine.phaseStorage().getAmount(Phase.all().get(index - tankBase)));
+        }
+        return 0;
+    }
+
+    private boolean activeFlag() {
+        if (machine == null) {
+            return false;
+        }
+        return machine.getBlockState().hasProperty(MachineBlock.ACTIVE)
+                && machine.getBlockState().getValue(MachineBlock.ACTIVE);
+    }
+
+    public int data(int index) {
+        return this.data.get(index);
+    }
+
+    public long energy() {
+        return data(0);
+    }
+
+    public boolean enabled() {
+        return (data(1) & 1) != 0;
+    }
+
+    public int redstoneMode() {
+        return (data(1) >> 1) & 3;
+    }
+
+    public boolean active() {
+        return (data(1) & 8) != 0;
+    }
+
+    public long mixedTotal() {
+        return data(2);
+    }
+
+    public long mixedAmount(int index) {
+        return data(mixedBase + index);
+    }
+
+    public long tankAmount(int index) {
+        return data(tankBase + index);
+    }
+
+    @Override
+    public boolean clickMenuButton(Player player, int id) {
+        if (machine == null) {
+            return false;
+        }
+        switch (id) {
+            case 0 -> machine.setEnabled(!machine.isEnabled());
+            case 1 -> machine.cycleRedstoneMode();
+            default -> {
+                return false;
+            }
+        }
+        this.broadcastChanges();
+        return true;
+    }
+
+    @Override
+    public ItemStack quickMoveStack(Player player, int index) {
+        Slot slot = this.slots.get(index);
+        if (slot == null || !slot.hasItem()) {
+            return ItemStack.EMPTY;
+        }
+        ItemStack stack = slot.getItem();
+        ItemStack copy = stack.copy();
+        if (index < 27) {
+            if (!this.moveItemStackTo(stack, 27, 36, false)) {
+                return ItemStack.EMPTY;
+            }
+        } else if (!this.moveItemStackTo(stack, 0, 27, false)) {
+            return ItemStack.EMPTY;
+        }
+        if (stack.isEmpty()) {
+            slot.set(ItemStack.EMPTY);
+        } else {
+            slot.setChanged();
+        }
+        return copy;
+    }
+
+    @Override
+    public boolean stillValid(Player player) {
+        if (machine == null || machine.isRemoved()) {
+            return false;
+        }
+        if (player.level().getBlockEntity(pos) != machine) {
+            return false;
+        }
+        return player.distanceToSqr(
+                pos.getX() + 0.5,
+                pos.getY() + 0.5,
+                pos.getZ() + 0.5
+        ) <= 64.0;
+    }
+}

@@ -1,9 +1,14 @@
 package com.spectrum255.meteorosprotocol.network;
 
 import com.spectrum255.meteorosprotocol.MeteorosProtocol;
+import com.spectrum255.meteorosprotocol.compat.WeatherAdjustedField;
 import com.spectrum255.meteorosprotocol.compat.WeatherParticleModifier;
 import com.spectrum255.meteorosprotocol.particle.FieldSample;
+import com.spectrum255.meteorosprotocol.particle.Phase;
+import com.spectrum255.meteorosprotocol.particle.PhaseRegistry;
 import com.spectrum255.meteorosprotocol.particle.SimpleBiomeField;
+import java.util.ArrayList;
+import java.util.List;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
@@ -35,7 +40,12 @@ public final class DetectorServerEvents {
         FieldSample base = SimpleBiomeField.sampleAt(level, serverPlayer.blockPosition());
         WeatherParticleModifier.Result weather =
                 WeatherParticleModifier.apply(level, serverPlayer.blockPosition(), base);
-        FieldSample sample = weather.sample();
+        FieldSample sample = WeatherAdjustedField.applySamplers(
+                level, serverPlayer.blockPosition(), weather.sample());
+        List<DetectorPayload.Extra> extra = new ArrayList<>();
+        for (Phase phase : PhaseRegistry.extraPhases()) {
+            extra.add(new DetectorPayload.Extra(phase.key(), sample.concentration(phase)));
+        }
         PacketDistributor.sendToPlayer(serverPlayer, new DetectorPayload(
                 sample.thermion(),
                 sample.cryon(),
@@ -44,7 +54,8 @@ public final class DetectorServerEvents {
                 sample.aquantum(),
                 sample.aetheron(),
                 weather.raining(),
-                weather.thundering()
+                weather.thundering(),
+                extra
         ));
     }
 

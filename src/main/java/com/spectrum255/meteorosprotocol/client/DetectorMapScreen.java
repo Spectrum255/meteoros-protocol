@@ -2,7 +2,10 @@ package com.spectrum255.meteorosprotocol.client;
 
 import com.mojang.blaze3d.platform.InputConstants;
 import com.spectrum255.meteorosprotocol.particle.FieldSample;
+import com.spectrum255.meteorosprotocol.particle.Phase;
 import com.spectrum255.meteorosprotocol.particle.SimpleBiomeField;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -42,6 +45,7 @@ public class DetectorMapScreen extends Screen {
     private static final int SAMPLE_INTERVAL = 20;
     private static final double MOVE_REBUILD_DISTANCE_SQ = 8.0 * 8.0;
     private static final int CHUNK_SIZE = 16;
+    private static final int MAX_HOVER_PHASES = 8;
     /** Coarse overlay grid: the map area is divided into 16 x 16 cells. */
     private static final int GRID = 16;
     private static final int CELL_BLOCKS = MAP_SIZE / GRID;
@@ -399,11 +403,7 @@ public class DetectorMapScreen extends Screen {
                             "X=%d Z=%d Y=%d | total=%.1f",
                             worldX, worldZ, surfaceY, this.hoverSample.totalDensity()),
                     left, textY, 0xFFFFFFFF, false);
-            graphics.drawString(this.font, String.format(Locale.ROOT,
-                            "T=%.1f C=%.1f V+=%.1f V-=%.1f Aq=%.1f Ae=%.1f",
-                            this.hoverSample.thermion(), this.hoverSample.cryon(),
-                            this.hoverSample.voltixPos(), this.hoverSample.voltixNeg(),
-                            this.hoverSample.aquantum(), this.hoverSample.aetheron()),
+            graphics.drawString(this.font, phaseLine(this.hoverSample),
                     left, textY + 10, 0xFFD0D0D0, false);
         } else {
             graphics.drawString(this.font, String.format(Locale.ROOT, "X=%d Z=%d | unloaded", worldX, worldZ),
@@ -419,6 +419,43 @@ public class DetectorMapScreen extends Screen {
                     Component.translatable("gui.meteorosprotocol.detector_map.biome", biome),
                     left, textY + 20, 0xFFB0B0B0, false);
         }
+    }
+
+    /** Core phases plus any non-zero addon phase, folded after {@value #MAX_HOVER_PHASES}. */
+    private static String phaseLine(FieldSample sample) {
+        List<Phase> phases = Phase.all();
+        float[] values = sample.concentrations();
+        List<String> entries = new ArrayList<>();
+        int visible = 0;
+        for (int index = 0; index < phases.size(); index++) {
+            Phase phase = phases.get(index);
+            float value = values[index];
+            if (!phase.core() && value <= 0.0F) {
+                continue;
+            }
+            visible++;
+            if (entries.size() < MAX_HOVER_PHASES) {
+                entries.add(shortLabel(phase) + "=" + String.format(Locale.ROOT, "%.1f", value));
+            }
+        }
+        StringBuilder text = new StringBuilder(String.join(" ", entries));
+        if (visible > entries.size()) {
+            text.append(" +").append(visible - entries.size());
+        }
+        return text.toString();
+    }
+
+    /** Compact labels for the core phases; addon phases use their id path. */
+    private static String shortLabel(Phase phase) {
+        return switch (phase.key().getPath()) {
+            case "aetheron" -> "Ae";
+            case "thermion" -> "T";
+            case "cryon" -> "C";
+            case "voltix_pos" -> "V+";
+            case "voltix_neg" -> "V-";
+            case "aquantum" -> "Aq";
+            default -> phase.key().getPath();
+        };
     }
 
     private static int colorFor(float total) {

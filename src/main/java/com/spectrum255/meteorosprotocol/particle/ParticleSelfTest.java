@@ -62,10 +62,18 @@ public final class ParticleSelfTest {
             require(all.get(index).core(), "core phase flagged as extra: " + all.get(index).id());
             require(all.get(index).index() == index, "index mismatch for " + all.get(index).id());
         }
+        require(all.subList(0, Phase.corePhases().size()).equals(Phase.corePhases()),
+                "Phase.all() must start with the six core phases");
+        for (int index = 0; index < all.size(); index++) {
+            require(all.get(index).index() == index,
+                    "index must equal list position for " + all.get(index).id());
+        }
         for (Phase phase : all) {
             require(Phase.byId(phase.id()) == phase, "byId failed for full id " + phase.id());
             require(Phase.byId(phase.key().getPath()) == phase,
                     "byId failed for bare id " + phase.key().getPath());
+            require(!phase.core() || Phase.corePhases().contains(phase),
+                    "Phase.core() disagrees with corePhases(): " + phase.id());
             require(phase.tankCapacity() > 0L, "tank capacity must be positive: " + phase.id());
         }
         require(Phase.byId("VOLTIX_POS") == Phase.VOLTIX_POS, "byId must be case-insensitive");

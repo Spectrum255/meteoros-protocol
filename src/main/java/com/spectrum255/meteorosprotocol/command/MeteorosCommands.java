@@ -31,6 +31,7 @@ public final class MeteorosCommands {
     private static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(Commands.literal("meteoros")
                 .then(Commands.literal("field").executes(ctx -> field(ctx.getSource())))
+                .then(Commands.literal("phases").executes(ctx -> phases(ctx.getSource())))
                 .then(Commands.literal("selftest").executes(ctx -> selftest(ctx.getSource())))
                 .then(Commands.literal("tank").executes(ctx -> tank(ctx.getSource()))));
     }
@@ -58,6 +59,35 @@ public final class MeteorosCommands {
                         : saturation.highDensity() ? "dense"
                         : "normal");
         source.sendSuccess(() -> Component.literal(message), false);
+        source.sendSuccess(() -> Component.literal("  " + phaseSummary(sample)), false);
+        return 1;
+    }
+
+    /** One "id=value" entry per registered phase, including addon phases. */
+    private static String phaseSummary(FieldSample sample) {
+        float[] concentrations = sample.concentrations();
+        StringBuilder text = new StringBuilder("phases:");
+        for (Phase phase : Phase.all()) {
+            text.append(String.format(Locale.ROOT, " %s=%.3f",
+                    phase.id(), concentrations[phase.index()]));
+        }
+        return text.toString();
+    }
+
+    /** Lists every registered phase and its index, capacity and sampler state. */
+    private static int phases(CommandSourceStack source) {
+        int core = Phase.corePhases().size();
+        int total = Phase.all().size();
+        source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                "Particle phases: %d total (%d core / %d addon), bootstrapped=%s",
+                total, core, total - core, PhaseRegistry.isBootstrapped())), false);
+        for (Phase phase : Phase.all()) {
+            String kind = phase.core() ? "core" : "addon";
+            boolean sampler = PhaseSamplers.hasSampler(phase);
+            source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                    "  [%d] %s | %s | tank=%d mPU | sampler=%s",
+                    phase.index(), phase.id(), kind, phase.tankCapacity(), sampler ? "yes" : "no")), false);
+        }
         return 1;
     }
 

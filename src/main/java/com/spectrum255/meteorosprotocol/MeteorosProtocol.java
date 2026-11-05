@@ -31,6 +31,7 @@ import net.neoforged.neoforge.capabilities.BlockCapability;
 import com.spectrum255.meteorosprotocol.menu.IntakeMenu;
 import com.spectrum255.meteorosprotocol.menu.FilterMenu;
 import com.spectrum255.meteorosprotocol.menu.InfiniteParticleCellMenu;
+import com.spectrum255.meteorosprotocol.menu.MachineStatusMenu;
 import com.spectrum255.meteorosprotocol.item.CanisterItem;
 import com.spectrum255.meteorosprotocol.item.FilterItem;
 import com.spectrum255.meteorosprotocol.item.ParticleDetectorItem;
@@ -62,7 +63,8 @@ public class MeteorosProtocol {
     public static final DeferredHolder<MenuType<?>,MenuType<IntakeMenu>> INTAKE_MENU=MENUS.register("particle_intake",()->IMenuTypeExtension.create(IntakeMenu::new));
     public static final DeferredHolder<MenuType<?>,MenuType<FilterMenu>> FILTER_MENU=MENUS.register("filter_cartridge",()->IMenuTypeExtension.create(FilterMenu::new));
     public static final DeferredHolder<MenuType<?>,MenuType<InfiniteParticleCellMenu>> INFINITE_PARTICLE_CELL_MENU=MENUS.register("infinite_particle_cell",()->IMenuTypeExtension.create(InfiniteParticleCellMenu::new));
-    private static final BlockBehaviour.Properties MACHINE=BlockBehaviour.Properties.of().mapColor(MapColor.COLOR_LIGHT_GRAY).strength(3.0f).sound(SoundType.METAL);
+    public static final DeferredHolder<MenuType<?>,MenuType<MachineStatusMenu>> MACHINE_STATUS_MENU=MENUS.register("machine_status",()->IMenuTypeExtension.create(MachineStatusMenu::new));
+    private static final BlockBehaviour.Properties MACHINE=BlockBehaviour.Properties.of().mapColor(MapColor.COLOR_LIGHT_GRAY).strength(3.0f).sound(SoundType.METAL).noOcclusion();
     public static final DeferredBlock<Block> MACHINE_FRAME=BLOCKS.register("machine_frame",()->new Block(MACHINE));
     public static final DeferredBlock<Block> THERMAL_GENERATOR=BLOCKS.register("thermal_generator",()->new MachineBlock(MACHINE));
     public static final DeferredBlock<Block> PARTICLE_INTAKE=BLOCKS.register("particle_intake",()->new IntakeBlock(MACHINE));

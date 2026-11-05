@@ -4,6 +4,7 @@ import com.spectrum255.meteorosprotocol.MeteorosProtocol;
 import com.spectrum255.meteorosprotocol.network.DetectorData;
 import com.spectrum255.meteorosprotocol.network.DetectorPayload;
 import com.spectrum255.meteorosprotocol.particle.FieldSample;
+import com.spectrum255.meteorosprotocol.particle.Phase;
 import com.spectrum255.meteorosprotocol.particle.Saturation;
 import com.spectrum255.meteorosprotocol.particle.SimpleBiomeField;
 import java.util.ArrayList;
@@ -31,6 +32,7 @@ import net.neoforged.neoforge.client.event.CustomizeGuiOverlayEvent;
 public final class ParticleDebugOverlay {
     private static final int SAMPLE_INTERVAL_TICKS = 20;
     private static final int MAX_SATURATION_RULES = 3;
+    private static final int MAX_PHASE_VALUES = 8;
 
     private static FieldSample cachedSample;
     private static ResourceKey<Level> cachedDimension;
@@ -60,10 +62,9 @@ public final class ParticleDebugOverlay {
                         .map(key -> key.location().toString())
                         .orElse("unknown")));
 
-        lines.add(String.format(Locale.ROOT,
-                "  Ae=%.1f T=%.1f C=%.1f V+=%.1f V-=%.1f Aq=%.1f",
-                sample.aetheron(), sample.thermion(), sample.cryon(),
-                sample.voltixPos(), sample.voltixNeg(), sample.aquantum()));
+        lines.add(phaseValues(sample));
+        lines.add(String.format(Locale.ROOT, "  phases: %d core / %d total",
+                Phase.corePhases().size(), Phase.all().size()));
 
         lines.add(String.format(Locale.ROOT,
                 "  D_th=%.1f D_ch=%.1f D_aq=%.1f D_ae=%.1f q=%.2f D_total=%.1f",
@@ -73,6 +74,48 @@ public final class ParticleDebugOverlay {
 
         lines.add("  sat: " + saturationRules(sample));
         lines.add("  weather: " + weatherState());
+    }
+
+    /**
+     * The phase values line. Iterates {@link Phase#all()} so addon phases are
+     * included; the client samples {@link SimpleBiomeField}, which has no
+     * sampler support (samplers and weather need a {@code ServerLevel}), so
+     * addon phases read 0 on the client. Use {@code /meteoros field} for the
+     * authoritative server-side values.
+     *
+     * <p>At most {@value #MAX_PHASE_VALUES} entries are shown; the rest are
+     * folded into {@code +N more}.</p>
+     */
+    private static String phaseValues(FieldSample sample) {
+        List<Phase> phases = Phase.all();
+        float[] concentrations = sample.concentrations();
+        int shown = Math.min(MAX_PHASE_VALUES, phases.size());
+        StringBuilder text = new StringBuilder("  ");
+        for (int index = 0; index < shown; index++) {
+            if (index > 0) {
+                text.append(' ');
+            }
+            text.append(shortLabel(phases.get(index)))
+                    .append('=')
+                    .append(String.format(Locale.ROOT, "%.1f", concentrations[index]));
+        }
+        if (phases.size() > shown) {
+            text.append(" +").append(phases.size() - shown).append(" more");
+        }
+        return text.toString();
+    }
+
+    /** Compact labels for the core phases; addon phases use their display name. */
+    private static String shortLabel(Phase phase) {
+        return switch (phase.key().getPath()) {
+            case "aetheron" -> "Ae";
+            case "thermion" -> "T";
+            case "cryon" -> "C";
+            case "voltix_pos" -> "V+";
+            case "voltix_neg" -> "V-";
+            case "aquantum" -> "Aq";
+            default -> phase.displayName().getString();
+        };
     }
 
     /**

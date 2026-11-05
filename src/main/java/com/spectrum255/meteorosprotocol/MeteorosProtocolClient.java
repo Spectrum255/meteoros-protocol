@@ -3,7 +3,10 @@ package com.spectrum255.meteorosprotocol;
 import com.spectrum255.meteorosprotocol.client.InfiniteParticleCellScreen;
 import com.spectrum255.meteorosprotocol.client.FilterScreen;
 import com.spectrum255.meteorosprotocol.client.IntakeScreen;
+import com.spectrum255.meteorosprotocol.client.MachineStatusScreen;
 import com.spectrum255.meteorosprotocol.client.ParticleIntakeRenderer;
+import com.spectrum255.meteorosprotocol.client.tooltip.ParticleTooltip;
+import com.spectrum255.meteorosprotocol.client.tooltip.ParticleTooltipRenderer;
 import net.minecraft.client.Minecraft;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -12,6 +15,7 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
+import net.neoforged.neoforge.client.event.RegisterClientTooltipComponentFactoriesEvent;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
 import net.neoforged.neoforge.client.gui.ConfigurationScreen;
 import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
@@ -41,6 +45,12 @@ public class MeteorosProtocolClient {
         event.register(MeteorosProtocol.INTAKE_MENU.get(), IntakeScreen::new);
         event.register(MeteorosProtocol.FILTER_MENU.get(), FilterScreen::new);
         event.register(MeteorosProtocol.INFINITE_PARTICLE_CELL_MENU.get(), InfiniteParticleCellScreen::new);
+        event.register(MeteorosProtocol.MACHINE_STATUS_MENU.get(), MachineStatusScreen::new);
+    }
+
+    @SubscribeEvent
+    static void registerTooltipComponents(RegisterClientTooltipComponentFactoriesEvent event) {
+        event.register(ParticleTooltip.class, ParticleTooltipRenderer::new);
     }
 
     @SubscribeEvent

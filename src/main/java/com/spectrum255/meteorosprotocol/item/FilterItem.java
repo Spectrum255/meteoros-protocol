@@ -175,6 +175,24 @@ public class FilterItem extends Item {
     }
 
     @Override
+    public boolean isBarVisible(ItemStack stack) {
+        return !isFull(getMask(stack));
+    }
+
+    @Override
+    public int getBarWidth(ItemStack stack) {
+        long[] mask = getMask(stack);
+        int total = Math.max(1, Phase.all().size());
+        int selected = selectedCount(mask);
+        return (int) Math.max(0L, Math.min(13L, Math.round(13.0 * selected / total)));
+    }
+
+    @Override
+    public int getBarColor(ItemStack stack) {
+        return 0xFF73FBFD;
+    }
+
+    @Override
     public void appendHoverText(ItemStack stack, Item.TooltipContext context, List<Component> tooltip, TooltipFlag flag) {
         long[] mask = getMask(stack);
         if (isFull(mask)) {
@@ -184,10 +202,5 @@ public class FilterItem extends Item {
         }
         tooltip.add(Component.translatable("tooltip.meteorosprotocol.filter_cartridge.selected")
                 .withStyle(ChatFormatting.GRAY));
-        for (Phase phase : Phase.all()) {
-            if (isSelected(stack, phase)) {
-                tooltip.add(phase.displayName().copy().withStyle(ChatFormatting.DARK_GRAY));
-            }
-        }
     }
 }

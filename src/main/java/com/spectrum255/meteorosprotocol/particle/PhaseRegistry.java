@@ -24,9 +24,11 @@ import org.slf4j.Logger;
  * extra phases; nothing else has to change in this mod.</p>
  *
  * <p>Registration uses {@link DeferredRegister#makeRegistry}, which creates the
- * registry immediately and registers it on {@code NewRegistryEvent}. Indices and
- * the ordered phase list only become valid at {@link #bootstrap()}, which runs
- * once the register events have finished (see {@code MeteorosProtocol}).</p>
+ * registry immediately and registers it on {@code NewRegistryEvent}. The
+ * registry is created with {@code sync(true)}, so the phase ids are synced to
+ * clients and addon phases are usable on both sides. Indices and the ordered
+ * phase list only become valid at {@link #bootstrap()}, which runs once the
+ * register events have finished (see {@code MeteorosProtocol}).</p>
  */
 public final class PhaseRegistry {
     private static final Logger LOGGER = LogUtils.getLogger();
@@ -38,9 +40,14 @@ public final class PhaseRegistry {
     /** The main mod's phase register. Call {@link #create(String)} from addons instead. */
     public static final DeferredRegister<Phase> PHASES = DeferredRegister.create(KEY, NAMESPACE);
 
+    /** How long to wait before retrying a bootstrap that ran before the registry was ready. */
+    private static final long RETRY_INTERVAL_NANOS = 1_000_000_000L;
+
     private static volatile List<Phase> ordered;
     private static volatile List<Phase> extras;
     private static volatile Map<ResourceLocation, Phase> byKey;
+    private static volatile long nextBootstrapAttempt;
+    private static volatile boolean pendingSyncWarned;
 
     static {
         PHASES.register("aetheron", () -> Phase.AETHERON);
@@ -49,10 +56,7 @@ public final class PhaseRegistry {
         PHASES.register("voltix_pos", () -> Phase.VOLTIX_POS);
         PHASES.register("voltix_neg", () -> Phase.VOLTIX_NEG);
         PHASES.register("aquantum", () -> Phase.AQUANTUM);
-        PHASES.makeRegistry(builder -> {
-            // The registry key comes from the DeferredRegister itself; the
-            // builder only needs the default (empty) configuration.
-        });
+        PHASES.makeRegistry(builder -> builder.sync(true));
     }
 
     private PhaseRegistry() {
@@ -68,19 +72,27 @@ public final class PhaseRegistry {
         PHASES.register(modBus);
     }
 
-    /** All phases in registration order; triggers bootstrap on first use. */
+    /**
+     * All phases in canonical order; never null. Until the registry has been
+     * frozen this falls back to the six core phases, so client code (HUD, F3,
+     * tooltips) keeps working even before the registry sync arrives.
+     */
     public static List<Phase> all() {
         List<Phase> list = ordered;
-        if (list == null) {
-            list = bootstrap();
+        if (list != null) {
+            return list;
         }
-        return list;
+        return bootstrap();
     }
 
-    /** Non-core phases in registration order. */
+    /** Non-core phases in registration order; empty until the registry is frozen. */
     public static List<Phase> extraPhases() {
-        all();
-        return extras;
+        List<Phase> list = ordered;
+        if (list == null) {
+            bootstrap();
+            list = ordered;
+        }
+        return list == null ? List.of() : extras;
     }
 
     public static boolean isBootstrapped() {
@@ -88,76 +100,82 @@ public final class PhaseRegistry {
     }
 
     /**
-     * Finalises indices and the ordered phase list. Idempotent; may be called
-     * from the load-complete handler and lazily from {@link #all()}.
+     * Finalises indices and the ordered phase list. Idempotent and never throws:
+     * when the registry is unavailable, empty, or missing one of the core phases
+     * (the normal situation on a client before the registry sync arrives) it
+     * warns once, leaves the registry unfrozen and returns the core phases. A
+     * later call retries — after the sync that call freezes for real — so the
+     * game keeps working and the client eventually sees addon phases too.
      */
     public static synchronized List<Phase> bootstrap() {
         List<Phase> existing = ordered;
         if (existing != null) {
             return existing;
         }
-        Registry<Phase> registry = PHASES.getRegistry().get();
-        if (registry == null) {
-            throw new IllegalStateException("The meteorosprotocol:phase registry is not available yet");
+        long now = System.nanoTime();
+        if (now < nextBootstrapAttempt) {
+            return Phase.corePhases();
         }
-        List<Phase> list = new ArrayList<>();
-        registry.iterator().forEachRemaining(list::add);
-        if (list.isEmpty()) {
-            throw new IllegalStateException("The meteorosprotocol:phase registry is empty; "
-                    + "bootstrap() ran before the register events finished");
+        Registry<Phase> registry = PHASES.getRegistry().get();
+        List<Phase> registered = new ArrayList<>();
+        if (registry != null) {
+            registry.iterator().forEachRemaining(registered::add);
+        }
+        List<Phase> core = Phase.corePhases();
+        if (registry == null || registered.size() < core.size() || !registered.containsAll(core)) {
+            deferBootstrap(now, registered.size());
+            return core;
         }
         // Registration order: MappedRegistry hands out increasing ids in
         // registration order, so sort by id to stay deterministic even if the
         // registry's own iteration order ever changes.
-        list.sort(Comparator.comparingInt(registry::getId));
+        registered.sort(Comparator.comparingInt(registry::getId));
 
         Map<ResourceLocation, Phase> keys = new HashMap<>();
-        for (int index = 0; index < list.size(); index++) {
-            Phase phase = list.get(index);
-            phase.setIndex(index);
+        for (Phase phase : registered) {
             keys.put(phase.key(), phase);
         }
-        validateCore(list, keys);
+        for (Phase phase : core) {
+            if (keys.get(phase.key()) != phase) {
+                // A different instance claimed a core id; wait for the real registry.
+                deferBootstrap(now, registered.size());
+                return core;
+            }
+        }
 
-        List<Phase> nonCore = new ArrayList<>(Math.max(0, list.size() - Phase.corePhases().size()));
-        for (Phase phase : list) {
+        boolean coreAtHead = registered.size() >= core.size()
+                && registered.subList(0, core.size()).equals(core);
+        List<Phase> canonical = new ArrayList<>(core);
+        List<Phase> nonCore = new ArrayList<>();
+        for (Phase phase : registered) {
             if (!phase.core()) {
                 nonCore.add(phase);
             }
         }
+        canonical.addAll(nonCore);
+        for (int index = 0; index < canonical.size(); index++) {
+            canonical.get(index).setIndex(index);
+        }
         byKey = Map.copyOf(keys);
         extras = List.copyOf(nonCore);
-        ordered = List.copyOf(list);
+        ordered = List.copyOf(canonical);
+        pendingSyncWarned = false;
+        if (!coreAtHead) {
+            LOGGER.warn("Core phases were not at the head of the phase registry (an addon registered "
+                    + "first); reordering them to keep the core indices 0..5 stable");
+        }
         LOGGER.info("Particle phase registry bootstrapped: {} phases ({} core, {} addon)",
-                ordered.size(), Phase.corePhases().size(), extras.size());
+                ordered.size(), core.size(), extras.size());
         return ordered;
     }
 
-    private static void validateCore(List<Phase> list, Map<ResourceLocation, Phase> keys) {
-        for (Phase core : Phase.corePhases()) {
-            Phase registered = keys.get(core.key());
-            if (registered == null) {
-                throw new IllegalStateException("Core phase " + core.id() + " is missing from the phase registry");
-            }
-            if (registered != core) {
-                throw new IllegalStateException("Core phase " + core.id()
-                        + " was replaced by a different Phase instance during registration");
-            }
-        }
-        int previous = -1;
-        for (Phase core : Phase.corePhases()) {
-            int index = core.index();
-            if (index <= previous) {
-                throw new IllegalStateException("Core phases are not in their canonical order ("
-                        + core.id() + " has index " + index + " after " + previous + ")");
-            }
-            previous = index;
-        }
-        if (list.size() < Phase.corePhases().size() || !list.subList(0, Phase.corePhases().size())
-                .equals(Phase.corePhases())) {
-            LOGGER.warn("Core phases are not at the head of the phase registry; "
-                    + "addon phases registered before meteorosprotocol. This is supported, "
-                    + "but display order will put addon phases first");
+    /** Throttles retries and logs the "waiting for sync" warning only once. */
+    private static void deferBootstrap(long now, int registeredCount) {
+        nextBootstrapAttempt = now + RETRY_INTERVAL_NANOS;
+        if (!pendingSyncWarned) {
+            pendingSyncWarned = true;
+            LOGGER.warn("The meteorosprotocol:phase registry is not fully populated yet ({} entries); "
+                    + "waiting for the registry sync before freezing phase indices", registeredCount);
         }
     }
 
@@ -173,20 +191,31 @@ public final class PhaseRegistry {
         String lower = trimmed.toLowerCase(Locale.ROOT);
         Map<ResourceLocation, Phase> keys = byKey;
         if (keys == null) {
-            all();
+            bootstrap();
             keys = byKey;
         }
-        if (lower.indexOf(':') >= 0) {
-            ResourceLocation parsed = ResourceLocation.tryParse(lower);
-            return parsed == null ? null : keys.get(parsed);
+        if (keys != null) {
+            if (lower.indexOf(':') >= 0) {
+                ResourceLocation parsed = ResourceLocation.tryParse(lower);
+                return parsed == null ? null : keys.get(parsed);
+            }
+            Phase direct = keys.get(ResourceLocation.fromNamespaceAndPath(NAMESPACE, lower));
+            if (direct != null) {
+                return direct;
+            }
+            List<Phase> list = ordered;
+            if (list != null) {
+                for (Phase phase : list) {
+                    if (phase.key().getPath().equals(lower)) {
+                        return phase;
+                    }
+                }
+            }
         }
-        ResourceLocation core = ResourceLocation.fromNamespaceAndPath(NAMESPACE, lower);
-        Phase direct = keys.get(core);
-        if (direct != null) {
-            return direct;
-        }
-        for (Phase phase : all()) {
-            if (phase.key().getPath().equals(lower)) {
+        // Not frozen yet (client before sync): core ids must still resolve from
+        // NBT and item data, by full id or by bare legacy path.
+        for (Phase phase : Phase.corePhases()) {
+            if (phase.id().equals(lower) || phase.key().getPath().equals(lower)) {
                 return phase;
             }
         }

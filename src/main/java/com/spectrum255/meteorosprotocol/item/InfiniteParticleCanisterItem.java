@@ -111,6 +111,22 @@ public class InfiniteParticleCanisterItem extends Item {
     }
 
     @Override
+    public boolean isBarVisible(ItemStack stack) {
+        return true;
+    }
+
+    @Override
+    public int getBarWidth(ItemStack stack) {
+        return 13;
+    }
+
+    @Override
+    public int getBarColor(ItemStack stack) {
+        Phase phase = getSelectedPhase(stack);
+        return phase == null ? 0xFFFFFFFF : phase.argb();
+    }
+
+    @Override
     public void appendHoverText(ItemStack stack, TooltipContext context, List<Component> tooltip, TooltipFlag flag) {
         Phase selected = getSelectedPhase(stack);
         if (selected == null) {

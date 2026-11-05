@@ -4,6 +4,8 @@ import com.spectrum255.meteorosprotocol.MeteorosProtocol;
 import com.spectrum255.meteorosprotocol.machine.MachineBlock;
 import com.spectrum255.meteorosprotocol.machine.MachineBlockEntity;
 import com.spectrum255.meteorosprotocol.particle.Phase;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
@@ -23,9 +25,11 @@ import snownee.jade.api.config.IPluginConfig;
  *
  * <p>Jade only scans this class when Jade itself is installed, so the class
  * (and its Jade imports) never load on a Jade-free client/server. The
- * server-side provider sends the machine's FE, mixed buffer and six phase
- * tanks; the client-side provider renders them in the tooltip. The renderer
- * still supplies the animated bars, while Jade supplies the exact numbers.</p>
+ * server-side provider sends the machine's FE, mixed buffer and the non-zero
+ * phase tanks; the client-side provider renders a compact tooltip: header,
+ * energy, mixed buffer, separator loss and a single phase summary line. The
+ * renderer still supplies the animated bars, while Jade supplies the exact
+ * numbers.</p>
  */
 @WailaPlugin("meteorosprotocol")
 public final class MeteorosJadePlugin implements IWailaPlugin {
@@ -45,6 +49,8 @@ public final class MeteorosJadePlugin implements IWailaPlugin {
         private static final ResourceLocation UID =
                 ResourceLocation.fromNamespaceAndPath(MeteorosProtocol.MODID, "machine");
         private static final String ROOT = "MeteorosProtocol";
+        private static final String PHASE_PREFIX = "Phase.";
+        private static final int MAX_PHASE_ENTRIES = 6;
 
         @Override
         public ResourceLocation getUid() {
@@ -62,9 +68,15 @@ public final class MeteorosJadePlugin implements IWailaPlugin {
             root.putLong("Mixed", machine.getTotal());
             root.putLong("MixedCapacity", MachineBlockEntity.MIXED_CAPACITY);
             root.putLong("Loss", machine.lastSeparatorLoss());
+            int nonZero = 0;
             for (Phase phase : Phase.all()) {
-                root.putLong("Phase." + phase.id(), machine.phaseStorage().getAmount(phase));
+                long amount = machine.phaseStorage().getAmount(phase);
+                if (amount > 0L) {
+                    root.putLong(PHASE_PREFIX + phase.id(), amount);
+                    nonZero++;
+                }
             }
+            root.putInt("PhaseCount", nonZero);
             data.put(ROOT, root);
         }
 
@@ -104,16 +116,40 @@ public final class MeteorosJadePlugin implements IWailaPlugin {
                 tooltip.add(Component.translatable("jade.meteorosprotocol.loss", num(loss)));
             }
 
+            tooltip.add(phasesLine(root, machine));
+        }
+
+        /**
+         * Builds the single "Phases: Ae 1,234 · T 890 · +2" line from the
+         * non-zero phase amounts, capped at {@value #MAX_PHASE_ENTRIES}
+         * entries. Returns the translated empty variant when every tank is 0.
+         */
+        private static Component phasesLine(CompoundTag root, MachineBlockEntity machine) {
+            List<String> entries = new ArrayList<>();
+            int nonZero = 0;
             for (Phase phase : Phase.all()) {
-                long amount = root.contains("Phase." + phase.id())
-                        ? root.getLong("Phase." + phase.id())
+                long amount = root.contains(PHASE_PREFIX + phase.id())
+                        ? root.getLong(PHASE_PREFIX + phase.id())
                         : machine != null ? machine.phaseStorage().getAmount(phase) : 0L;
-                tooltip.add(Component.translatable(
-                        "jade.meteorosprotocol.phase",
-                        phase.displayName(),
-                        num(amount),
-                        num(phase.tankCapacity())));
+                if (amount <= 0L) {
+                    continue;
+                }
+                nonZero++;
+                if (entries.size() < MAX_PHASE_ENTRIES) {
+                    entries.add(phase.shortName().getString() + " " + num(amount));
+                }
             }
+            if (entries.isEmpty()) {
+                return Component.translatable("jade.meteorosprotocol.phases.empty");
+            }
+            StringBuilder summary = new StringBuilder(String.join(" \u00b7 ", entries));
+            int remaining = nonZero - entries.size();
+            if (remaining > 0) {
+                summary.append(" \u00b7 ")
+                        .append(Component.translatable("jade.meteorosprotocol.phases.more", remaining)
+                                .getString());
+            }
+            return Component.translatable("jade.meteorosprotocol.phases", summary.toString());
         }
 
         private static String num(long value) {

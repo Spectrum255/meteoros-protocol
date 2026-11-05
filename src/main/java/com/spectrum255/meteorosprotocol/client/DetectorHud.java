@@ -3,6 +3,9 @@ package com.spectrum255.meteorosprotocol.client;
 import com.spectrum255.meteorosprotocol.MeteorosProtocol;
 import com.spectrum255.meteorosprotocol.network.DetectorData;
 import com.spectrum255.meteorosprotocol.network.DetectorPayload;
+import com.spectrum255.meteorosprotocol.particle.Phase;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -19,13 +22,15 @@ import net.neoforged.neoforge.client.event.RenderGuiEvent;
  * Top-left HUD shown while a {@code particle_detector} is anywhere in the
  * player's inventory. Data is supplied by {@code DetectorServerEvents} every
  * ten ticks; the HUD only reads the latest client-side snapshot.
+ *
+ * <p>Rows iterate {@link Phase#all()}. Core phases are always listed; addon
+ * phases appear only when their concentration is positive. At most
+ * {@value #MAX_ROWS} phases fit the fixed panel; the rest are folded into a
+ * {@code +N} counter next to the title.</p>
  */
 @EventBusSubscriber(modid = MeteorosProtocol.MODID, value = Dist.CLIENT, bus = EventBusSubscriber.Bus.GAME)
 public final class DetectorHud {
-    private static final int[] PHASE_COLORS = {
-            0xFFFFFFFF, 0xFFFF4A3F, 0xFF5FE8FF, 0xFFFFE14A, 0xFF9A5CFF, 0xFF3A54E0
-    };
-    private static final String[] PHASE_NAMES = {"Ae", "T", "C", "V+", "V-", "Aq"};
+    private static final int MAX_ROWS = 6;
     private static final int PANEL_BG = 0xB0000000;
     private static final int TITLE = 0xFFFFFFFF;
     private static final int TEXT = 0xFFD8D8D8;
@@ -60,24 +65,36 @@ public final class DetectorHud {
             return;
         }
 
-        float total = payload.thermion() + payload.cryon() + payload.voltixPos()
-                + payload.voltixNeg() + payload.aquantum() + payload.aetheron();
+        List<Phase> phases = Phase.all();
+        List<Phase> visible = new ArrayList<>();
+        float total = 0.0F;
+        for (Phase phase : phases) {
+            float value = concentration(payload, phase);
+            total += value;
+            if (phase.core() || value > 0.0F) {
+                visible.add(phase);
+            }
+        }
+
         graphics.drawString(minecraft.font,
                 Component.translatable("hud.meteorosprotocol.detector.total", format(total)),
                 x + 4, y + 16, TEXT, false);
 
-        float[] values = {
-                payload.aetheron(), payload.thermion(), payload.cryon(),
-                payload.voltixPos(), payload.voltixNeg(), payload.aquantum()
-        };
-        for (int index = 0; index < values.length; index++) {
+        int shown = Math.min(MAX_ROWS, visible.size());
+        for (int index = 0; index < shown; index++) {
+            Phase phase = visible.get(index);
+            float value = concentration(payload, phase);
             int column = index % 2;
             int row = index / 2;
             int px = x + 4 + column * 76;
             int py = y + 28 + row * 11;
-            graphics.fill(px, py + 3, px + 3, py + 6, PHASE_COLORS[index]);
-            graphics.drawString(minecraft.font, PHASE_NAMES[index], px + 6, py, TEXT, false);
-            graphics.drawString(minecraft.font, format(values[index]), px + 26, py, phaseTextColor(index), false);
+            graphics.fill(px, py + 3, px + 3, py + 6, phase.argb());
+            graphics.drawString(minecraft.font, shortLabel(phase), px + 6, py, TEXT, false);
+            graphics.drawString(minecraft.font, format(value), px + 52, py, phase.argb(), false);
+        }
+        if (visible.size() > shown) {
+            graphics.drawString(minecraft.font, "+" + (visible.size() - shown),
+                    x + width - 16, y + 4, TEXT, false);
         }
 
         String weatherKey = payload.thundering()
@@ -89,8 +106,41 @@ public final class DetectorHud {
                 x + 4, y + 62, TEXT, false);
     }
 
-    private static int phaseTextColor(int index) {
-        return PHASE_COLORS[index];
+    private static float concentration(DetectorPayload payload, Phase phase) {
+        switch (phase.key().getPath()) {
+            case "aetheron":
+                return payload.aetheron();
+            case "thermion":
+                return payload.thermion();
+            case "cryon":
+                return payload.cryon();
+            case "voltix_pos":
+                return payload.voltixPos();
+            case "voltix_neg":
+                return payload.voltixNeg();
+            case "aquantum":
+                return payload.aquantum();
+            default:
+                for (DetectorPayload.Extra entry : payload.extra()) {
+                    if (entry.id().equals(phase.key())) {
+                        return entry.value();
+                    }
+                }
+                return 0.0F;
+        }
+    }
+
+    /** Compact labels for the core phases; addon phases use their id path. */
+    private static String shortLabel(Phase phase) {
+        return switch (phase.key().getPath()) {
+            case "aetheron" -> "Ae";
+            case "thermion" -> "T";
+            case "cryon" -> "C";
+            case "voltix_pos" -> "V+";
+            case "voltix_neg" -> "V-";
+            case "aquantum" -> "Aq";
+            default -> phase.key().getPath();
+        };
     }
 
     private static String format(float value) {

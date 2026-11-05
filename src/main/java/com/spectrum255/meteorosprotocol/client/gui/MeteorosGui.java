@@ -9,12 +9,13 @@ import net.minecraft.util.Mth;
 import java.util.List;
 
 /**
- * Shared drawing kit for Meteoros Protocol machine screens, following the
- * Mekanism layout conventions documented in {@code docs/reference/mekanism-gui-notes.md}.
+ * Shared drawing kit for Meteoros Protocol machine screens.
  *
- * <p>All textures live under {@code assets/meteorosprotocol/textures/gui/} and are
- * exported by the art task; until they exist the screen will show the missing
- * texture placeholder, but every call site stays texture-path correct.
+ * <p>All primitives now mimic the vanilla container look (the {@code #C6C6C6}
+ * panel, sunken {@code #8B8B8B} slots, {@code #373737} frames), so screens keep
+ * the familiar inventory styling without depending on custom GUI textures. The
+ * texture constants below are kept for the art pipeline and for any future
+ * textured variant, but the vanilla-style screens no longer blit them.
  */
 public final class MeteorosGui {
     private static final String MOD_ID = "meteorosprotocol";
@@ -32,7 +33,16 @@ public final class MeteorosGui {
     public static final ResourceLocation TAB_HOLDER = gui("tab_holder");
     public static final ResourceLocation INNER_SCREEN = gui("inner_screen");
 
-    /** Slot hover wash, same value Mekanism uses. */
+    /** Vanilla container colours. */
+    public static final int PANEL_BODY = 0xFFC6C6C6;
+    public static final int PANEL_HIGHLIGHT = 0xFFFFFFFF;
+    public static final int PANEL_SHADOW = 0xFF555555;
+    public static final int SLOT_DARK = 0xFF373737;
+    public static final int SLOT_LIGHT = 0xFFFFFFFF;
+    public static final int SLOT_BODY = 0xFF8B8B8B;
+    public static final int LABEL_TEXT = 0xFF404040;
+
+    /** Slot hover wash, same value the vanilla container uses. */
     public static final int SLOT_HOVER = 0x80FFFFFF;
     /** Tooltip body / border colours. */
     private static final int TOOLTIP_BG = 0xF0100010;
@@ -40,6 +50,12 @@ public final class MeteorosGui {
     private static final int TOOLTIP_BORDER_DARK = 0x5028007F;
     public static final int BUTTON_TEXT = 0xFF303030;
     public static final int BUTTON_TEXT_DISABLED = 0xFF9A9A9A;
+
+    /** Reused shades for the vanilla-style extras (muted outlines, row hover, scrollbar). */
+    public static final int SLOT_MUTED = 0xFF6E6E6E;
+    public static final int ROW_HIGHLIGHT = 0x20FFFFFF;
+    public static final int SELECTED_FRAME = 0xFFFFFFFF;
+    public static final int TEXT_DIM = 0xFF808080;
 
     private MeteorosGui() {
     }
@@ -75,14 +91,35 @@ public final class MeteorosGui {
         blit(g, tex, x + cw, y + ch, w - cw * 2, h - ch * 2, u + sw, v + sh, iw, ih, tw, th);
     }
 
-    /** 256 x 256 window background with 4 px corners. */
+    /**
+     * Vanilla container panel: 1 px black outline, {@code #C6C6C6} body, white
+     * inner highlight on the top/left edges and {@code #555555} shading on the
+     * bottom/right edges.
+     */
     public static void panel(GuiGraphics g, int x, int y, int w, int h) {
-        nineSlice(g, PANEL, x, y, w, h, 4, 4, 0, 0, 256, 256, 256, 256);
+        if (w <= 0 || h <= 0) {
+            return;
+        }
+        g.fill(x, y, x + w, y + h, 0xFF000000);
+        if (w <= 2 || h <= 2) {
+            return;
+        }
+        g.fill(x + 1, y + 1, x + w - 1, y + h - 1, PANEL_BODY);
+        g.fill(x + 1, y + 1, x + w - 1, y + 2, PANEL_HIGHLIGHT);
+        g.fill(x + 1, y + 1, x + 2, y + h - 1, PANEL_HIGHLIGHT);
+        g.fill(x + 1, y + h - 2, x + w - 1, y + h - 1, PANEL_SHADOW);
+        g.fill(x + w - 2, y + 1, x + w - 1, y + h - 1, PANEL_SHADOW);
     }
 
-    /** 18 x 18 slot texture drawn at (x - 1, y - 1) around a 16 x 16 item cell. */
+    /** 18 x 18 sunken slot drawn at (x - 1, y - 1) around a 16 x 16 item cell. */
     public static void slot(GuiGraphics g, int x, int y) {
-        g.blit(SLOT, x - 1, y - 1, 0f, 0f, 18, 18, 18, 18);
+        int sx = x - 1;
+        int sy = y - 1;
+        g.fill(sx, sy, sx + 18, sy + 18, SLOT_BODY);
+        g.fill(sx, sy, sx + 18, sy + 1, SLOT_DARK);
+        g.fill(sx, sy, sx + 1, sy + 18, SLOT_DARK);
+        g.fill(sx, sy + 17, sx + 18, sy + 18, SLOT_LIGHT);
+        g.fill(sx + 17, sy, sx + 18, sy + 18, SLOT_LIGHT);
     }
 
     public static void slot(GuiGraphics g, int x, int y, boolean hovered) {
@@ -92,7 +129,7 @@ public final class MeteorosGui {
         }
     }
 
-    /** 200 x 60 three-state button texture, 20 x 4 corners. */
+    /** 200 x 60 three-state button texture, 20 x 4 corners (unused by vanilla-style screens). */
     public static void button(GuiGraphics g, int x, int y, int w, int h, boolean active, boolean hovered) {
         int state = !active ? 0 : (hovered ? 2 : 1);
         nineSlice(g, BUTTON, x, y, w, h, 20, 4, 0, state * 20, 200, 20, 200, 60);
@@ -114,39 +151,116 @@ public final class MeteorosGui {
         g.pose().popPose();
     }
 
-    /** Horizontal bar: 5 x 5 frame with 2 px 9-slice, 52 x 4 fill cropped by source width. */
-    public static void barH(GuiGraphics g, int x, int y, int w, int h, float level) {
-        nineSlice(g, BAR_FRAME, x, y, w, h, 2, 2, 0, 0, 5, 5, 5, 5);
+    /** Horizontal bar: 1 px {@code #373737} frame, {@code #8B8B8B} track, coloured fill. */
+    public static void barH(GuiGraphics g, int x, int y, int w, int h, float level, int color) {
+        if (w <= 0 || h <= 0) {
+            return;
+        }
+        g.fill(x, y, x + w, y + h, SLOT_DARK);
         if (w <= 2 || h <= 2) {
             return;
         }
+        g.fill(x + 1, y + 1, x + w - 1, y + h - 1, SLOT_BODY);
         int innerW = w - 2;
-        int innerH = h - 2;
-        int src = (int) (Mth.clamp(level, 0f, 1f) * 52f);
-        if (src <= 0) {
-            return;
+        int fill = Math.round(Mth.clamp(level, 0f, 1f) * innerW);
+        if (fill > 0) {
+            g.fill(x + 1, y + 1, x + 1 + fill, y + h - 1, color);
         }
-        int dst = Math.max(1, Math.round(src * (innerW / 52f)));
-        g.blit(BAR_FILL_H, x + 1, y + 1, dst, innerH, 0f, 0f, src, 4, 52, 4);
     }
 
-    /** Vertical bar, filling from the bottom; 4 x 52 fill cropped by source height. */
-    public static void barV(GuiGraphics g, int x, int y, int w, int h, float level) {
-        nineSlice(g, BAR_FRAME, x, y, w, h, 2, 2, 0, 0, 5, 5, 5, 5);
+    /** Vertical bar, filling from the bottom. */
+    public static void barV(GuiGraphics g, int x, int y, int w, int h, float level, int color) {
+        if (w <= 0 || h <= 0) {
+            return;
+        }
+        g.fill(x, y, x + w, y + h, SLOT_DARK);
         if (w <= 2 || h <= 2) {
             return;
         }
-        int innerW = w - 2;
+        g.fill(x + 1, y + 1, x + w - 1, y + h - 1, SLOT_BODY);
         int innerH = h - 2;
-        int src = (int) (Mth.clamp(level, 0f, 1f) * 52f);
-        if (src <= 0) {
-            return;
+        int fill = Math.round(Mth.clamp(level, 0f, 1f) * innerH);
+        if (fill > 0) {
+            g.fill(x + 1, y + h - 1 - fill, x + w - 1, y + h - 1, color);
         }
-        int dst = Math.max(1, Math.round(src * (innerH / 52f)));
-        g.blit(BAR_FILL_V, x + 1, y + 1 + innerH - dst, innerW, dst, 0f, 0f, 4, src, 4, 52);
     }
 
-    /** Gauge: coloured 5 x 5 frame, solid fill, then the tick overlay on top. */
+    /**
+     * Horizontal composition strip: segments proportional to {@code amounts},
+     * the last non-empty phase takes the rounding remainder so the total width
+     * never drifts. The caller owns the frame/background.
+     */
+    public static void strip(GuiGraphics g, int x, int y, int w, int h,
+                             long[] amounts, long total, int[] colors) {
+        if (w <= 0 || h <= 0 || total <= 0L || amounts == null || colors == null) {
+            return;
+        }
+        int count = Math.min(amounts.length, colors.length);
+        int last = lastNonEmpty(amounts, count);
+        if (last < 0) {
+            return;
+        }
+        int used = 0;
+        for (int index = 0; index <= last; index++) {
+            long amount = amounts[index];
+            if (amount <= 0L) {
+                continue;
+            }
+            int seg = index == last
+                    ? w - used
+                    : (int) Math.round((double) amount / total * w);
+            seg = Math.max(0, Math.min(seg, w - used));
+            if (seg > 0) {
+                g.fill(x + used, y, x + used + seg, y + h, colors[index]);
+                used += seg;
+            }
+        }
+    }
+
+    /** Vertical composition strip: segments stack upwards from the bottom edge. */
+    public static void stripV(GuiGraphics g, int x, int y, int w, int h,
+                              long[] amounts, long total, int[] colors) {
+        if (w <= 0 || h <= 0 || total <= 0L || amounts == null || colors == null) {
+            return;
+        }
+        int count = Math.min(amounts.length, colors.length);
+        int last = lastNonEmpty(amounts, count);
+        if (last < 0) {
+            return;
+        }
+        int used = 0;
+        for (int index = 0; index <= last; index++) {
+            long amount = amounts[index];
+            if (amount <= 0L) {
+                continue;
+            }
+            int seg = index == last
+                    ? h - used
+                    : (int) Math.round((double) amount / total * h);
+            seg = Math.max(0, Math.min(seg, h - used));
+            if (seg > 0) {
+                int bottom = y + h - used;
+                g.fill(x, bottom - seg, x + w, bottom, colors[index]);
+                used += seg;
+            }
+        }
+    }
+
+    private static int lastNonEmpty(long[] amounts, int count) {
+        for (int index = count - 1; index >= 0; index--) {
+            if (amounts[index] > 0L) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    /** Vanilla container label: {@code #404040} without a drop shadow. */
+    public static void label(GuiGraphics g, Font font, Component text, int x, int y) {
+        g.drawString(font, text, x, y, LABEL_TEXT, false);
+    }
+
+    /** Gauge: coloured 5 x 5 frame, solid fill, then the tick overlay on top (unused by vanilla-style screens). */
     public static void gauge(GuiGraphics g, int x, int y, int w, int h, float level, int color) {
         nineSlice(g, GAUGE_FRAME, x, y, w, h, 2, 2, 0, 0, 5, 5, 5, 5);
         if (w <= 2 || h <= 2) {

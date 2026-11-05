@@ -71,12 +71,13 @@ public class MachineBlock extends BaseEntityBlock {
     }
 
     @Override protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hit) {
-        if (!level.isClientSide && level.getBlockEntity(pos) instanceof MachineBlockEntity machine) {
-            if (state.getBlock() == MeteorosProtocol.PARTICLE_INTAKE.get() && player instanceof ServerPlayer serverPlayer) {
-                serverPlayer.openMenu(machine);
-            } else {
-                player.displayClientMessage(machine.statusMessage(), true);
-            }
+        // Every machine owns a menu now: the intake tower has its own layout and
+        // the rest fall back to the shared machine status screen. Machines only
+        // exist together with their block entity, so a missing one means a
+        // broken block and there is nothing useful to report in the action bar.
+        if (!level.isClientSide && player instanceof ServerPlayer serverPlayer
+                && level.getBlockEntity(pos) instanceof MachineBlockEntity machine) {
+            serverPlayer.openMenu(machine);
         }
         return InteractionResult.sidedSuccess(level.isClientSide);
     }

@@ -14,21 +14,22 @@ import org.jetbrains.annotations.Nullable;
  * <p>The six core phases keep their compile-time constant names
  * ({@link #AETHERON} ... {@link #AQUANTUM}). They are created eagerly here and
  * registered by {@link PhaseRegistry} through suppliers that return these very
- * instances, so a static initialiser elsewhere may safely reference them. Only
- * the dense {@link #index()} becomes valid once {@link PhaseRegistry#bootstrap()}
- * has run (after the register events, at load-complete).</p>
+ * instances, so a static initialiser elsewhere may safely reference them. The
+ * core phases also have their canonical {@link #index()} 0..5 from the start;
+ * addon phases receive an index when {@link PhaseRegistry#bootstrap()} freezes
+ * the registry.</p>
  */
 public final class Phase {
     /** Namespace of the core phases. */
     public static final String CORE_NAMESPACE = "meteorosprotocol";
 
     /** The six core phases, in their canonical historical order. */
-    public static final Phase AETHERON = core("aetheron", 0xFFFFFF);
-    public static final Phase THERMION = core("thermion", 0xFF4A3F);
-    public static final Phase CRYON = core("cryon", 0x5FE8FF);
-    public static final Phase VOLTIX_POS = core("voltix_pos", 0xFFE14A);
-    public static final Phase VOLTIX_NEG = core("voltix_neg", 0x9A5CFF);
-    public static final Phase AQUANTUM = core("aquantum", 0x3A54E0);
+    public static final Phase AETHERON = core("aetheron", 0xFFFFFF, 0);
+    public static final Phase THERMION = core("thermion", 0xFF4A3F, 1);
+    public static final Phase CRYON = core("cryon", 0x5FE8FF, 2);
+    public static final Phase VOLTIX_POS = core("voltix_pos", 0xFFE14A, 3);
+    public static final Phase VOLTIX_NEG = core("voltix_neg", 0x9A5CFF, 4);
+    public static final Phase AQUANTUM = core("aquantum", 0x3A54E0, 5);
 
     private static final List<Phase> CORE_PHASES =
             List.of(AETHERON, THERMION, CRYON, VOLTIX_POS, VOLTIX_NEG, AQUANTUM);
@@ -61,12 +62,14 @@ public final class Phase {
         this.customName = customName;
     }
 
-    private static Phase core(String path, int rgb) {
-        return new Builder(ResourceLocation.fromNamespaceAndPath(CORE_NAMESPACE, path))
+    private static Phase core(String path, int rgb, int coreIndex) {
+        Phase phase = new Builder(ResourceLocation.fromNamespaceAndPath(CORE_NAMESPACE, path))
                 .color(rgb)
                 .atmospheric(true)
                 .core()
                 .build();
+        phase.index = coreIndex;
+        return phase;
     }
 
     public static Builder builder(ResourceLocation id) {
@@ -118,6 +121,18 @@ public final class Phase {
                 : Component.translatable("phase." + key.getNamespace() + "." + key.getPath());
     }
 
+    /**
+     * Compact label used by tooltip summaries (e.g. {@code Ae} for Aetheron).
+     * Falls back to the id path so addon phases still render without a lang
+     * entry for their short form.
+     */
+    public Component shortName() {
+        return Component.translatableWithFallback(
+                "phase." + key.getNamespace() + "." + key.getPath() + ".short",
+                key.getPath()
+        );
+    }
+
     /** Per-phase tank capacity inside a machine (default 8,000 PU). */
     public long tankCapacity() {
         return tankCapacity;
@@ -128,11 +143,15 @@ public final class Phase {
         return atmospheric;
     }
 
-    /** Dense index inside the registry; only valid after bootstrap. */
+    /**
+     * Dense index inside the registry. Core phases always have their canonical
+     * index 0..5, even before {@link PhaseRegistry#bootstrap()} freezes the
+     * registry; addon phases only get one once bootstrap succeeded.
+     */
     public int index() {
         if (index < 0) {
             throw new IllegalStateException("Phase " + key + " has no registry index yet; "
-                    + "PhaseRegistry.bootstrap() has not run");
+                    + "PhaseRegistry.bootstrap() has not frozen the registry");
         }
         return index;
     }
@@ -152,7 +171,15 @@ public final class Phase {
         return sampler;
     }
 
+    /**
+     * Assigns the dense index. Core phases keep the canonical index they were
+     * created with, so an addon registering before the main mod cannot shift
+     * them (the registry order is re-normalised around them in bootstrap).
+     */
     void setIndex(int index) {
+        if (core) {
+            return;
+        }
         this.index = index;
     }
 

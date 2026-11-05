@@ -67,19 +67,36 @@ public class CanisterItem extends Item {
     }
 
     @Override
+    public boolean isBarVisible(ItemStack stack) {
+        return getTotal(stack) > 0L;
+    }
+
+    @Override
+    public int getBarWidth(ItemStack stack) {
+        long total = getTotal(stack);
+        return (int) Math.max(0L, Math.min(13L, Math.round(13.0 * total / CAPACITY)));
+    }
+
+    @Override
+    public int getBarColor(ItemStack stack) {
+        long[] amounts = getAmounts(stack);
+        List<Phase> phases = Phase.all();
+        int best = -1;
+        long bestAmount = 0L;
+        int limit = Math.min(phases.size(), amounts.length);
+        for (int index = 0; index < limit; index++) {
+            if (amounts[index] > bestAmount) {
+                bestAmount = amounts[index];
+                best = index;
+            }
+        }
+        return best < 0 ? 0xFFFFFFFF : phases.get(best).argb();
+    }
+
+    @Override
     public void appendHoverText(ItemStack stack, Item.TooltipContext context, List<Component> tooltip, TooltipFlag flag) {
         long total = getTotal(stack);
         tooltip.add(Component.translatable("tooltip.meteorosprotocol.canister.total", total, CAPACITY)
                 .withStyle(ChatFormatting.GRAY));
-        long[] amounts = getAmounts(stack);
-        for (Phase phase : Phase.all()) {
-            if (amounts[phase.index()] > 0L) {
-                tooltip.add(Component.translatable(
-                        "tooltip.meteorosprotocol.canister.phase",
-                        phase.displayName(),
-                        amounts[phase.index()]
-                ).withStyle(ChatFormatting.DARK_GRAY));
-            }
-        }
     }
 }

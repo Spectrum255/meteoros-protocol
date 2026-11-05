@@ -2,6 +2,7 @@ package com.spectrum255.meteorosprotocol.machine;
 
 import com.spectrum255.meteorosprotocol.MeteorosProtocol;
 import com.spectrum255.meteorosprotocol.menu.IntakeMenu;
+import com.spectrum255.meteorosprotocol.menu.MachineStatusMenu;
 import com.spectrum255.meteorosprotocol.compat.WeatherAdjustedField;
 import com.spectrum255.meteorosprotocol.item.CanisterItem;
 import com.spectrum255.meteorosprotocol.item.FilterItem;
@@ -254,10 +255,12 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
     }
 
     /**
-     * Minimal mixed-particle pipe: every fifth tick, push its buffer into an
-     * adjacent mixed storage, or pull from one when empty. The intake tower's
-     * west face is an extract-only {@code MIXED_STORAGE}, so a pipe placed on
-     * that face can drain the tower through the modelled SidePort.
+     * Minimal particle pipe: every fifth tick, push its mixed buffer into an
+     * adjacent mixed storage, then push the phase tanks into an adjacent
+     * {@code PHASE_STORAGE}. When empty it pulls from neighbours instead. The
+     * intake tower's west face is an extract-only {@code MIXED_STORAGE}, so a
+     * pipe placed on that face can drain the tower through the modelled
+     * SidePort.
      */
     private void tickPipe(ServerLevel level, BlockPos pos) {
         if (progress % PIPE_INTERVAL != 0L) {
@@ -283,9 +286,27 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
                     }
                 }
             }
-            return;
+        }
+        if (!phaseStorage.isEmpty()) {
+            for (Direction direction : Direction.values()) {
+                if (!ParticlePipeBlock.isConnected(pipeState, direction)) {
+                    continue;
+                }
+                PhaseStorage target = level.getCapability(
+                        ParticleCapabilities.PHASE_STORAGE,
+                        pos.relative(direction)
+                );
+                if (target != null && target != phaseStorage) {
+                    if (pushPhaseContents(target) > 0L) {
+                        return;
+                    }
+                }
+            }
         }
 
+        if (getTotal() > 0L) {
+            return;
+        }
         for (Direction direction : Direction.values()) {
             if (!ParticlePipeBlock.isConnected(pipeState, direction)) {
                 continue;
@@ -301,6 +322,28 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
             );
             if (source != null) {
                 if (pullPipeContents(source) > 0L) {
+                    return;
+                }
+            }
+        }
+
+        if (!phaseStorage.isEmpty()) {
+            return;
+        }
+        for (Direction direction : Direction.values()) {
+            if (!ParticlePipeBlock.isConnected(pipeState, direction)) {
+                continue;
+            }
+            BlockPos sourcePos = pos.relative(direction);
+            if (level.getBlockState(sourcePos).is(MeteorosProtocol.PARTICLE_PIPE.get())) {
+                continue;
+            }
+            PhaseStorage source = level.getCapability(
+                    ParticleCapabilities.PHASE_STORAGE,
+                    sourcePos
+            );
+            if (source != null && source != phaseStorage) {
+                if (pullPhaseContents(source) > 0L) {
                     return;
                 }
             }
@@ -346,6 +389,52 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
             long accepted = insert(phase, extracted, false);
             if (accepted < extracted) {
                 // Return the part that did not fit the pipe buffer.
+                source.insert(phase, extracted - accepted, false);
+            }
+            moved += accepted;
+        }
+        return moved;
+    }
+
+    /**
+     * Moves up to {@code PIPE_MPU_PER_TRANSFER / 4} mPU of each phase into
+     * {@code target}. Returns the total amount accepted by the destination;
+     * anything it could not take is put back into its own tank.
+     */
+    private long pushPhaseContents(PhaseStorage target) {
+        long perPhase = Math.max(1L, PIPE_MPU_PER_TRANSFER / 4L);
+        long moved = 0L;
+        for (Phase phase : Phase.all()) {
+            long budget = Math.min(perPhase, phaseStorage.getAmount(phase));
+            if (budget <= 0L) {
+                continue;
+            }
+            long extracted = phaseStorage.extract(phase, budget, false);
+            long accepted = target.insert(phase, extracted, false);
+            if (accepted < extracted) {
+                phaseStorage.insert(phase, extracted - accepted, false);
+            }
+            moved += accepted;
+        }
+        return moved;
+    }
+
+    /**
+     * Mirror of {@link #pushPhaseContents(PhaseStorage)}: pulls per-phase
+     * amounts from {@code source} into the local tanks and puts back what does
+     * not fit.
+     */
+    private long pullPhaseContents(PhaseStorage source) {
+        long perPhase = Math.max(1L, PIPE_MPU_PER_TRANSFER / 4L);
+        long moved = 0L;
+        for (Phase phase : Phase.all()) {
+            long budget = Math.min(perPhase, source.getAmount(phase));
+            if (budget <= 0L) {
+                continue;
+            }
+            long extracted = source.extract(phase, budget, false);
+            long accepted = phaseStorage.insert(phase, extracted, false);
+            if (accepted < extracted) {
                 source.insert(phase, extracted - accepted, false);
             }
             moved += accepted;
@@ -424,18 +513,43 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         if (energy > ENERGY_CAPACITY - GENERATOR_FE_PER_TICK) {
             return false;
         }
-        if (phaseStorage.extract(Phase.THERMION, GENERATOR_INPUT_MPU_PER_TICK, true)
-                < GENERATOR_INPUT_MPU_PER_TICK) {
+        int thermionIndex = Phase.THERMION.index();
+        int cryonIndex = Phase.CRYON.index();
+
+        // Thermion comes from the phase tank; when the tank holds less than one
+        // operation, take the whole input from the mixed buffer instead.
+        boolean fromTank =
+                phaseStorage.extract(Phase.THERMION, GENERATOR_INPUT_MPU_PER_TICK, true)
+                        >= GENERATOR_INPUT_MPU_PER_TICK;
+        if (!fromTank && mixed[thermionIndex] < GENERATOR_INPUT_MPU_PER_TICK) {
             return false;
         }
-        // v2 replaces the old T -> Ae recipe with T -> C; refuse the conversion
-        // if the Cryon tank cannot take the output, so mass is conserved.
-        if (phaseStorage.insert(Phase.CRYON, GENERATOR_OUTPUT_MPU_PER_TICK, true)
-                < GENERATOR_OUTPUT_MPU_PER_TICK) {
-            return false;
+
+        // v2 replaces the old T -> Ae recipe with T -> C. The output fills the
+        // Cryon tank first and spills into the mixed buffer; whatever fits
+        // neither is discarded, so neither store exceeds its capacity.
+        long tankAccepted = phaseStorage.insert(Phase.CRYON, GENERATOR_OUTPUT_MPU_PER_TICK, true);
+        long overflow = GENERATOR_OUTPUT_MPU_PER_TICK - tankAccepted;
+
+        if (fromTank) {
+            phaseStorage.extract(Phase.THERMION, GENERATOR_INPUT_MPU_PER_TICK, false);
+        } else {
+            mixed[thermionIndex] -= GENERATOR_INPUT_MPU_PER_TICK;
+            setChanged();
         }
-        phaseStorage.extract(Phase.THERMION, GENERATOR_INPUT_MPU_PER_TICK, false);
-        phaseStorage.insert(Phase.CRYON, GENERATOR_OUTPUT_MPU_PER_TICK, false);
+
+        if (tankAccepted > 0L) {
+            phaseStorage.insert(Phase.CRYON, tankAccepted, false);
+        }
+        if (overflow > 0L) {
+            long mixedRoom = Math.max(0L, MIXED_CAPACITY - getTotal());
+            long mixedAccepted = Math.min(overflow, mixedRoom);
+            if (mixedAccepted > 0L) {
+                mixed[cryonIndex] += mixedAccepted;
+                setChanged();
+            }
+        }
+
         energy = Math.min(ENERGY_CAPACITY, energy + GENERATOR_FE_PER_TICK);
         return true;
     }
@@ -766,12 +880,31 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
 
     @Override
     public Component getDisplayName() {
+        if (level != null) {
+            Block block = getBlockState().getBlock();
+            if (block == MeteorosProtocol.THERMAL_GENERATOR.get()) {
+                return Component.translatable("container.meteorosprotocol.thermal_generator");
+            }
+            if (block == MeteorosProtocol.PHASE_SEPARATOR.get()) {
+                return Component.translatable("container.meteorosprotocol.phase_separator");
+            }
+            if (block == MeteorosProtocol.WEATHER_STATION.get()) {
+                return Component.translatable("container.meteorosprotocol.weather_station");
+            }
+            if (block == MeteorosProtocol.WEATHER_TANK.get()) {
+                return Component.translatable("container.meteorosprotocol.weather_tank");
+            }
+        }
         return Component.translatable("container.meteorosprotocol.particle_intake");
     }
 
     @Override
     public AbstractContainerMenu createMenu(int containerId, Inventory inventory, Player player) {
-        return new IntakeMenu(containerId, inventory, this);
+        Block block = getBlockState().getBlock();
+        if (block == MeteorosProtocol.PARTICLE_INTAKE.get()) {
+            return new IntakeMenu(containerId, inventory, this);
+        }
+        return new MachineStatusMenu(containerId, inventory, this);
     }
 
     @Override
