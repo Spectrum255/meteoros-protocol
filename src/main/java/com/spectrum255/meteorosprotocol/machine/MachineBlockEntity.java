@@ -913,6 +913,26 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
     }
 
     /**
+     * Fills the canister in slot 1 with one phase, taking from that phase's tank
+     * first and topping the remainder up from the mixed buffer. This is what the
+     * intake GUI's extract button calls: storages are drained before the buffer.
+     *
+     * @return total mPU moved into the canister
+     */
+    public long fillCanister(Phase phase) {
+        long moved = fillCanisterFromPhase(phase);
+        ItemStack canister = items.getItem(1);
+        boolean infiniteBound = canister.is(MeteorosProtocol.INFINITE_PARTICLE_CANISTER.get())
+                && InfiniteParticleCanisterItem.hasPhase(canister);
+        boolean normalFull = canister.is(MeteorosProtocol.CANISTER.get())
+                && CanisterItem.getTotal(canister) >= CanisterItem.CAPACITY;
+        if (infiniteBound || normalFull) {
+            return moved;
+        }
+        return moved + fillCanisterFromMixed(phase);
+    }
+
+    /**
      * Sided mixed-storage view. The intake tower exposes an extract-only output
      * port on the face to the right of its front (north -> west); every other
      * face returns null. Other machines keep their all-face behaviour.

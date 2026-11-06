@@ -200,7 +200,7 @@ public class IntakeMenu extends AbstractContainerMenu {
             return true;
         }
         if (id == 2 + phaseCount) {
-            machine.fillCanisterFromMixed(machine.canisterPhase());
+            machine.fillCanister(machine.canisterPhase());
             this.broadcastChanges();
             return true;
         }
