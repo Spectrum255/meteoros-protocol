@@ -71,8 +71,12 @@ public class MachineBlock extends BaseEntityBlock {
     }
 
     @Override protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hit) {
-        // Every machine owns a menu now: the intake tower has its own layout and
-        // the rest fall back to the shared machine status screen. Machines only
+        // Pipes are pure transport: no GUI, so a right click does not open a menu.
+        if (state.getBlock() instanceof ParticlePipeBlock) {
+            return InteractionResult.PASS;
+        }
+        // Every other machine owns a menu now: the intake tower has its own layout
+        // and the rest fall back to the shared machine status screen. Machines only
         // exist together with their block entity, so a missing one means a
         // broken block and there is nothing useful to report in the action bar.
         if (!level.isClientSide && player instanceof ServerPlayer serverPlayer

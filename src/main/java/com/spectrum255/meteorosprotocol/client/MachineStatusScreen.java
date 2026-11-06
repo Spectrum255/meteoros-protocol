@@ -18,9 +18,14 @@ import java.util.Locale;
  * Shared status screen for the machines that have no bespoke layout (thermal
  * generator, phase separator, weather station, weather tank): 176 x 180
  * vanilla-styled panel, one FE bar, a vertical mixed-buffer tank, one vertical
- * bar per phase tank, two status lines and two icon buttons (enable, cycle
- * redstone mode). No item slots are involved; only the player inventory is
- * drawn.
+ * bar per <em>relevant</em> phase, two status lines and two icon buttons
+ * (enable, cycle redstone mode). No item slots are involved; only the player
+ * inventory is drawn.
+ *
+ * <p>The phase bars follow the machine family: the generator only shows the
+ * Thermion input and Cryon output, the separator shows every phase, and the
+ * weather blocks (which have no particle logic yet) show no bars at all and a
+ * single "no particle I/O" line instead.
  */
 public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMenu> {
     private static final int WIDTH = 176;
@@ -41,14 +46,20 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
 
     private static final int PHASE_X = 44;
     private static final int PHASE_Y = 38;
-    private static final int PHASE_WIDTH = 6;
     private static final int PHASE_HEIGHT = 26;
-    private static final int PHASE_STEP = 8;
+    /** 6 px bars with 8 px pitch match the original six-phase layout. */
+    private static final int COMPACT_BAR_WIDTH = 6;
+    private static final int COMPACT_BAR_STEP = 8;
+    /** Two relevant phases (the generator) get almost double-width bars. */
+    private static final int WIDE_BAR_WIDTH = 12;
+    private static final int WIDE_BAR_STEP = 16;
+    private static final int WIDE_BAR_THRESHOLD = 2;
 
     private static final int STATUS_X = 8;
     private static final int STATUS_Y = 66;
     private static final int REDSTONE_Y = 76;
     private static final int STATUS_COLOR = 0xFF404040;
+    private static final int NO_PARTICLES_Y = 38;
 
     private static final int BUTTON_X = 112;
     private static final int BUTTON_SIZE = 20;
@@ -118,6 +129,14 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
         };
     }
 
+    private static int barWidth(int phaseCount) {
+        return phaseCount <= WIDE_BAR_THRESHOLD ? WIDE_BAR_WIDTH : COMPACT_BAR_WIDTH;
+    }
+
+    private static int barStep(int phaseCount) {
+        return phaseCount <= WIDE_BAR_THRESHOLD ? WIDE_BAR_STEP : COMPACT_BAR_STEP;
+    }
+
     @Override
     protected void renderBg(GuiGraphics graphics, float partialTick, int mouseX, int mouseY) {
         int x = this.leftPos;
@@ -127,10 +146,15 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
         MeteorosGui.barH(graphics, x + FE_X, y + FE_Y, FE_WIDTH, FE_HEIGHT,
                 (float) this.menu.energy() / MachineStatusMenu.ENERGY_CAPACITY, FE_COLOR);
 
-        drawMixtureTank(graphics, x + TANK_X, y + TANK_Y);
-        for (int index = 0; index < Phase.all().size(); index++) {
-            drawPhaseTank(graphics,
-                    x + PHASE_X + index * PHASE_STEP, y + PHASE_Y, index, mouseX, mouseY);
+        List<Phase> phases = this.menu.relevantPhases();
+        if (!phases.isEmpty()) {
+            drawMixtureTank(graphics, x + TANK_X, y + TANK_Y);
+            int width = barWidth(phases.size());
+            int step = barStep(phases.size());
+            for (int position = 0; position < phases.size(); position++) {
+                drawPhaseTank(graphics, x + PHASE_X + position * step, y + PHASE_Y,
+                        phases.get(position), width, mouseX, mouseY);
+            }
         }
 
         for (int row = 0; row < 3; row++) {
@@ -171,21 +195,27 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
         }
     }
 
-    private void drawPhaseTank(GuiGraphics graphics, int x, int y, int index, int mouseX, int mouseY) {
-        Phase phase = Phase.all().get(index);
-        long amount = this.menu.tankAmount(index);
+    private void drawPhaseTank(GuiGraphics graphics, int x, int y, Phase phase, int width,
+                               int mouseX, int mouseY) {
+        long amount = this.menu.tankAmount(phase.index());
         float level = phase.tankCapacity() <= 0L
                 ? 0f
                 : (float) Math.min(1.0, (double) amount / phase.tankCapacity());
-        MeteorosGui.barV(graphics, x, y, PHASE_WIDTH, PHASE_HEIGHT, level, phase.argb());
-        if (inside(mouseX, mouseY, x, y, PHASE_WIDTH, PHASE_HEIGHT)) {
-            graphics.fill(x, y, x + PHASE_WIDTH, y + PHASE_HEIGHT, 0x30FFFFFF);
+        MeteorosGui.barV(graphics, x, y, width, PHASE_HEIGHT, level, phase.argb());
+        if (inside(mouseX, mouseY, x, y, width, PHASE_HEIGHT)) {
+            graphics.fill(x, y, x + width, y + PHASE_HEIGHT, 0x30FFFFFF);
         }
     }
 
     @Override
     protected void renderLabels(GuiGraphics graphics, int mouseX, int mouseY) {
         graphics.drawString(this.font, this.title, 8, TITLE_Y, TITLE_COLOR, false);
+
+        if (this.menu.relevantPhases().isEmpty()) {
+            graphics.drawString(this.font,
+                    Component.translatable("gui.meteorosprotocol.machine.no_particles"),
+                    8, NO_PARTICLES_Y, MeteorosGui.TEXT_DIM, false);
+        }
 
         Component state = Component.translatable(this.menu.active()
                 ? "gui.meteorosprotocol.machine.working"
@@ -221,16 +251,19 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
             MeteorosGui.tooltip(graphics, this.font, redstoneTooltip(), mouseX, mouseY, 0xFF9A9A9A);
             return;
         }
+        List<Phase> phases = this.menu.relevantPhases();
+        if (phases.isEmpty()) {
+            return;
+        }
         int x = this.leftPos;
         int y = this.topPos;
-        int phase = phaseAt(mouseX, mouseY);
-        if (phase >= 0) {
-            Phase value = Phase.all().get(phase);
-            Component header = Component.literal(value.displayName().getString()
-                    + ": " + String.format(Locale.ROOT, "%,d", this.menu.tankAmount(phase))
-                    + " / " + String.format(Locale.ROOT, "%,d", value.tankCapacity()) + " mPU");
+        Phase phase = phaseAt(mouseX, mouseY);
+        if (phase != null) {
+            Component header = Component.literal(phase.displayName().getString()
+                    + ": " + String.format(Locale.ROOT, "%,d", this.menu.tankAmount(phase.index()))
+                    + " / " + String.format(Locale.ROOT, "%,d", phase.tankCapacity()) + " mPU");
             Component mixed = Component.literal(String.format(Locale.ROOT, "mixed: %,d mPU",
-                    this.menu.mixedAmount(phase)));
+                    this.menu.mixedAmount(phase.index())));
             MeteorosGui.tooltip(graphics, this.font, List.of(header, mixed), mouseX, mouseY, 0xFF9A9A9A);
             return;
         }
@@ -248,14 +281,17 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
         }
     }
 
-    private int phaseAt(int mouseX, int mouseY) {
-        for (int index = 0; index < Phase.all().size(); index++) {
-            int barX = this.leftPos + PHASE_X + index * PHASE_STEP;
-            if (inside(mouseX, mouseY, barX, this.topPos + PHASE_Y, PHASE_WIDTH, PHASE_HEIGHT)) {
-                return index;
+    private Phase phaseAt(double mouseX, double mouseY) {
+        List<Phase> phases = this.menu.relevantPhases();
+        int width = barWidth(phases.size());
+        int step = barStep(phases.size());
+        for (int position = 0; position < phases.size(); position++) {
+            int barX = this.leftPos + PHASE_X + position * step;
+            if (inside(mouseX, mouseY, barX, this.topPos + PHASE_Y, width, PHASE_HEIGHT)) {
+                return phases.get(position);
             }
         }
-        return -1;
+        return null;
     }
 
     private static boolean inside(double mouseX, double mouseY, int x, int y, int width, int height) {

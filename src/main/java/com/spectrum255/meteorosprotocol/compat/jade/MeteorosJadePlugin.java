@@ -7,6 +7,7 @@ import com.spectrum255.meteorosprotocol.particle.Phase;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import net.minecraft.ChatFormatting;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -19,6 +20,8 @@ import snownee.jade.api.IWailaCommonRegistration;
 import snownee.jade.api.IWailaPlugin;
 import snownee.jade.api.WailaPlugin;
 import snownee.jade.api.config.IPluginConfig;
+import snownee.jade.api.ui.BoxStyle;
+import snownee.jade.api.ui.IElementHelper;
 
 /**
  * Optional Jade integration for the particle machines.
@@ -26,8 +29,8 @@ import snownee.jade.api.config.IPluginConfig;
  * <p>Jade only scans this class when Jade itself is installed, so the class
  * (and its Jade imports) never load on a Jade-free client/server. The
  * server-side provider sends the machine's FE, mixed buffer and the non-zero
- * phase tanks; the client-side provider renders a compact tooltip: header,
- * energy, mixed buffer, separator loss and a single phase summary line. The
+ * phase tanks; the client-side provider renders compact progress bars (energy,
+ * mixed buffer, up to three phase tanks) instead of plain text lines. The
  * renderer still supplies the animated bars, while Jade supplies the exact
  * numbers.</p>
  */
@@ -50,7 +53,10 @@ public final class MeteorosJadePlugin implements IWailaPlugin {
                 ResourceLocation.fromNamespaceAndPath(MeteorosProtocol.MODID, "machine");
         private static final String ROOT = "MeteorosProtocol";
         private static final String PHASE_PREFIX = "Phase.";
-        private static final int MAX_PHASE_ENTRIES = 6;
+        private static final String MIXED_PREFIX = "Mixed.";
+        private static final int MAX_PHASE_BARS = 3;
+        private static final int ENERGY_COLOR = 0xFFD24B3F;
+        private static final int MIXED_EMPTY_COLOR = 0xFF555555;
 
         @Override
         public ResourceLocation getUid() {
@@ -68,15 +74,22 @@ public final class MeteorosJadePlugin implements IWailaPlugin {
             root.putLong("Mixed", machine.getTotal());
             root.putLong("MixedCapacity", MachineBlockEntity.MIXED_CAPACITY);
             root.putLong("Loss", machine.lastSeparatorLoss());
-            int nonZero = 0;
+            int mixedNonZero = 0;
+            int tankNonZero = 0;
             for (Phase phase : Phase.all()) {
-                long amount = machine.phaseStorage().getAmount(phase);
-                if (amount > 0L) {
-                    root.putLong(PHASE_PREFIX + phase.id(), amount);
-                    nonZero++;
+                long mixedAmount = machine.getAmount(phase);
+                if (mixedAmount > 0L) {
+                    root.putLong(MIXED_PREFIX + phase.id(), mixedAmount);
+                    mixedNonZero++;
+                }
+                long tankAmount = machine.phaseStorage().getAmount(phase);
+                if (tankAmount > 0L) {
+                    root.putLong(PHASE_PREFIX + phase.id(), tankAmount);
+                    tankNonZero++;
                 }
             }
-            root.putInt("PhaseCount", nonZero);
+            root.putInt("MixedCount", mixedNonZero);
+            root.putInt("PhaseCount", tankNonZero);
             data.put(ROOT, root);
         }
 
@@ -106,50 +119,101 @@ public final class MeteorosJadePlugin implements IWailaPlugin {
                 return;
             }
 
+            IElementHelper helper = IElementHelper.get();
+            BoxStyle box = BoxStyle.getTransparent();
+
             tooltip.add(Component.translatable("jade.meteorosprotocol.header"));
-            tooltip.add(Component.translatable(
-                    "jade.meteorosprotocol.energy", num(energy), num(energyCapacity)));
-            tooltip.add(Component.translatable(
-                    "jade.meteorosprotocol.mixed", num(mixed), num(MachineBlockEntity.MIXED_CAPACITY)));
+
+            tooltip.add(helper.progress(
+                    fraction(energy, energyCapacity),
+                    Component.literal(num(energy) + " / " + num(energyCapacity) + " FE"),
+                    helper.progressStyle().color(ENERGY_COLOR),
+                    box,
+                    true));
+
+            Phase dominant = dominantMixedPhase(root, machine);
+            int mixedColor = dominant == null ? MIXED_EMPTY_COLOR : dominant.argb();
+            tooltip.add(helper.progress(
+                    fraction(mixed, MachineBlockEntity.MIXED_CAPACITY),
+                    Component.literal(num(mixed) + " / " + num(MachineBlockEntity.MIXED_CAPACITY) + " mPU"),
+                    helper.progressStyle().color(mixedColor),
+                    box,
+                    true));
 
             if (accessor.getBlock() == MeteorosProtocol.PHASE_SEPARATOR.get()) {
                 tooltip.add(Component.translatable("jade.meteorosprotocol.loss", num(loss)));
             }
 
-            tooltip.add(phasesLine(root, machine));
+            List<Phase> stored = nonZeroTanks(root, machine);
+            int shown = Math.min(MAX_PHASE_BARS, stored.size());
+            for (int i = 0; i < shown; i++) {
+                Phase phase = stored.get(i);
+                long amount = tankAmount(root, machine, phase);
+                tooltip.add(helper.progress(
+                        fraction(amount, phase.tankCapacity()),
+                        Component.literal(phase.shortName().getString()
+                                + " " + num(amount) + " / " + num(phase.tankCapacity())),
+                        helper.progressStyle().color(phase.argb()),
+                        box,
+                        true));
+            }
+            if (stored.size() > MAX_PHASE_BARS) {
+                tooltip.add(Component.translatable(
+                                "jade.meteorosprotocol.phases.more", stored.size() - MAX_PHASE_BARS)
+                        .withStyle(ChatFormatting.GRAY));
+            } else if (stored.isEmpty()) {
+                tooltip.add(Component.translatable("jade.meteorosprotocol.phases.empty")
+                        .withStyle(ChatFormatting.GRAY));
+            }
         }
 
-        /**
-         * Builds the single "Phases: Ae 1,234 · T 890 · +2" line from the
-         * non-zero phase amounts, capped at {@value #MAX_PHASE_ENTRIES}
-         * entries. Returns the translated empty variant when every tank is 0.
-         */
-        private static Component phasesLine(CompoundTag root, MachineBlockEntity machine) {
-            List<String> entries = new ArrayList<>();
-            int nonZero = 0;
+        /** The phase holding the most mPU in the mixed buffer, or null when empty. */
+        private static Phase dominantMixedPhase(CompoundTag root, MachineBlockEntity machine) {
+            Phase dominant = null;
+            long best = 0L;
             for (Phase phase : Phase.all()) {
-                long amount = root.contains(PHASE_PREFIX + phase.id())
-                        ? root.getLong(PHASE_PREFIX + phase.id())
-                        : machine != null ? machine.phaseStorage().getAmount(phase) : 0L;
-                if (amount <= 0L) {
-                    continue;
-                }
-                nonZero++;
-                if (entries.size() < MAX_PHASE_ENTRIES) {
-                    entries.add(phase.shortName().getString() + " " + num(amount));
+                long amount = mixedAmount(root, machine, phase);
+                if (amount > best) {
+                    best = amount;
+                    dominant = phase;
                 }
             }
-            if (entries.isEmpty()) {
-                return Component.translatable("jade.meteorosprotocol.phases.empty");
+            return dominant;
+        }
+
+        /** Non-zero phase tanks, in registry order (core phases first). */
+        private static List<Phase> nonZeroTanks(CompoundTag root, MachineBlockEntity machine) {
+            List<Phase> stored = new ArrayList<>();
+            for (Phase phase : Phase.all()) {
+                if (tankAmount(root, machine, phase) > 0L) {
+                    stored.add(phase);
+                }
             }
-            StringBuilder summary = new StringBuilder(String.join(" \u00b7 ", entries));
-            int remaining = nonZero - entries.size();
-            if (remaining > 0) {
-                summary.append(" \u00b7 ")
-                        .append(Component.translatable("jade.meteorosprotocol.phases.more", remaining)
-                                .getString());
+            return stored;
+        }
+
+        private static long mixedAmount(CompoundTag root, MachineBlockEntity machine, Phase phase) {
+            String key = MIXED_PREFIX + phase.id();
+            if (root.contains(key)) {
+                return root.getLong(key);
             }
-            return Component.translatable("jade.meteorosprotocol.phases", summary.toString());
+            return machine != null ? machine.getAmount(phase) : 0L;
+        }
+
+        private static long tankAmount(CompoundTag root, MachineBlockEntity machine, Phase phase) {
+            String key = PHASE_PREFIX + phase.id();
+            if (root.contains(key)) {
+                return root.getLong(key);
+            }
+            return machine != null ? machine.phaseStorage().getAmount(phase) : 0L;
+        }
+
+        private static float fraction(long value, long capacity) {
+            if (capacity <= 0L) {
+                return 0.0F;
+            }
+            float fill = (float) ((double) value / (double) capacity);
+            return Math.max(0.0F, Math.min(1.0F, fill));
         }
 
         private static String num(long value) {

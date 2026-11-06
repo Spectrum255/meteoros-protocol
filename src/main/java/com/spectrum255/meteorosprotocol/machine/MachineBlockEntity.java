@@ -8,6 +8,7 @@ import com.spectrum255.meteorosprotocol.item.CanisterItem;
 import com.spectrum255.meteorosprotocol.item.FilterItem;
 import com.spectrum255.meteorosprotocol.item.InfiniteParticleCanisterItem;
 import com.spectrum255.meteorosprotocol.particle.*;
+import java.util.List;
 import java.util.Locale;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -527,11 +528,16 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
             return false;
         }
 
-        // v2 replaces the old T -> Ae recipe with T -> C. The output fills the
-        // Cryon tank first and spills into the mixed buffer; whatever fits
-        // neither is discarded, so neither store exceeds its capacity.
-        long tankAccepted = phaseStorage.insert(Phase.CRYON, GENERATOR_OUTPUT_MPU_PER_TICK, true);
-        long overflow = GENERATOR_OUTPUT_MPU_PER_TICK - tankAccepted;
+        // v2 replaces the old T -> Ae recipe with T -> C. Fresh Cryon is pushed
+        // into adjacent phase storages first; whatever they cannot take goes into
+        // the local tank, and only a full tank spills into the mixed buffer.
+        long remaining = GENERATOR_OUTPUT_MPU_PER_TICK;
+        long pushed = pushToNeighbourStorages(Phase.CRYON, remaining);
+        remaining -= pushed;
+        long tankAccepted = remaining > 0L
+                ? phaseStorage.insert(Phase.CRYON, remaining, true)
+                : 0L;
+        long overflow = remaining - tankAccepted;
 
         if (fromTank) {
             phaseStorage.extract(Phase.THERMION, GENERATOR_INPUT_MPU_PER_TICK, false);
@@ -760,6 +766,58 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
             case LOW -> level == null || !level.hasNeighborSignal(worldPosition);
             case ALWAYS_ON -> true;
         };
+    }
+
+    /**
+     * Phases this machine can actually consume or produce. The generator only
+     * touches Thermion (input) and Cryon (output), the separator handles the
+     * whole mixed buffer, and the weather blocks have no particle logic yet.
+     * Used by the shared status screen to avoid drawing irrelevant gauges.
+     */
+    public List<Phase> relevantPhases() {
+        Block block = getBlockState().getBlock();
+        if (block == MeteorosProtocol.THERMAL_GENERATOR.get()) {
+            return List.of(Phase.THERMION, Phase.CRYON);
+        }
+        if (block == MeteorosProtocol.WEATHER_STATION.get() || block == MeteorosProtocol.WEATHER_TANK.get()) {
+            return List.of();
+        }
+        return Phase.all();
+    }
+
+    /**
+     * Pushes up to {@code amount} of a freshly produced phase into adjacent
+     * {@code PHASE_STORAGE}s (the capability has no direction context, so it is
+     * queried with two arguments). Anything the neighbours cannot take is left
+     * to the caller; returns the amount actually moved.
+     */
+    private long pushToNeighbourStorages(Phase phase, long amount) {
+        if (amount <= 0L || level == null) {
+            return 0L;
+        }
+        long remaining = amount;
+        long moved = 0L;
+        for (Direction direction : Direction.values()) {
+            if (remaining <= 0L) {
+                break;
+            }
+            PhaseStorage target = level.getCapability(
+                    ParticleCapabilities.PHASE_STORAGE,
+                    worldPosition.relative(direction)
+            );
+            if (target == null) {
+                continue;
+            }
+            long accepted = target.insert(phase, remaining, false);
+            if (accepted > 0L) {
+                moved += accepted;
+                remaining -= accepted;
+            }
+        }
+        if (moved > 0L) {
+            setChanged();
+        }
+        return moved;
     }
 
     /**

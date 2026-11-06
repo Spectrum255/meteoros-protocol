@@ -4,7 +4,6 @@ import com.spectrum255.meteorosprotocol.MeteorosProtocol;
 import com.spectrum255.meteorosprotocol.client.gui.IconButton;
 import com.spectrum255.meteorosprotocol.client.gui.IntakeLayout;
 import com.spectrum255.meteorosprotocol.client.gui.MeteorosGui;
-import com.spectrum255.meteorosprotocol.client.gui.PhaseBarWidget;
 import com.spectrum255.meteorosprotocol.item.InfiniteParticleCanisterItem;
 import com.spectrum255.meteorosprotocol.machine.MachineBlockEntity;
 import com.spectrum255.meteorosprotocol.menu.IntakeMenu;
@@ -17,19 +16,18 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
 /**
  * Intake tower screen: 176 x 180, vanilla-styled container panel with a banded
- * mixture tank, one horizontal FE bar, six phase gauges fed by the mixed buffer,
- * two slots and three 20 x 20 icon buttons.
+ * mixture tank, one horizontal FE bar, two slots and three 20 x 20 icon buttons.
  *
- * <p>Both the gauges and the buttons are real widgets, so click dispatch and
- * hover tracking go through vanilla instead of hand-rolled hit tests. Clicking a
- * gauge selects the phase to extract; the extract button then pumps that phase
- * into the canister in slot 1.
+ * <p>The tank itself is the phase selector: clicking a colour band selects that
+ * phase for extraction (button id {@code 2 + phase.index()}), the selected band
+ * gets a white frame and a hovered band is washed with white. The three icon
+ * buttons keep their own vanilla widget dispatch, and the extract button pumps
+ * the selected phase into the canister in slot 1.
  */
 public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
     private static final int TITLE_Y = 6;
@@ -53,7 +51,6 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
     private static final ResourceLocation ICON_REDSTONE_ALWAYS = icon("icon_redstone_always");
     private static final ResourceLocation ICON_EXTRACT = icon("icon_extract");
 
-    private final List<PhaseBarWidget> phaseBars = new ArrayList<>();
     private IconButton toggleButton;
     private IconButton redstoneButton;
     private IconButton extractButton;
@@ -71,21 +68,6 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
     @Override
     protected void init() {
         super.init();
-
-        this.phaseBars.clear();
-        int barX = this.leftPos + IntakeLayout.PHASE_X;
-        int barY = this.topPos + IntakeLayout.PHASE_Y;
-        for (int position = 0; position < Phase.all().size(); position++) {
-            final int index = position;
-            PhaseBarWidget bar = new PhaseBarWidget(index,
-                    barX + position * IntakeLayout.PHASE_STEP, barY,
-                    IntakeLayout.PHASE_STEP, IntakeLayout.PHASE_HEIGHT,
-                    () -> this.menu.mixedAmount(index),
-                    this.menu::canisterPhaseIndex,
-                    selected -> sendButton(2 + selected));
-            this.phaseBars.add(this.addRenderableWidget(bar));
-        }
-
         int buttonX = this.leftPos + ICON_BUTTON_X;
         this.toggleButton = this.addRenderableWidget(new IconButton(buttonX, this.topPos + ICON_TOGGLE_Y,
                 ICON_BUTTON_SIZE, ICON_BUTTON_SIZE, this::powerIcon, this::powerTooltip, button -> sendButton(0)));
@@ -112,12 +94,26 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
     }
 
     @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        boolean handled = super.mouseClicked(mouseX, mouseY, button);
+        if (handled || button != 0) {
+            return handled;
+        }
+        int phase = tankPhaseAt(mouseX, mouseY);
+        if (phase >= 0) {
+            sendButton(2 + phase);
+            return true;
+        }
+        return false;
+    }
+
+    @Override
     protected void renderBg(GuiGraphics graphics, float partialTick, int mouseX, int mouseY) {
         int x = this.leftPos;
         int y = this.topPos;
         MeteorosGui.panel(graphics, x, y, IntakeLayout.WIDTH, IntakeLayout.HEIGHT);
 
-        drawMixtureTank(graphics, x + IntakeLayout.TANK_X, y + IntakeLayout.TANK_Y);
+        drawMixtureTank(graphics, x + IntakeLayout.TANK_X, y + IntakeLayout.TANK_Y, mouseX, mouseY);
 
         MeteorosGui.barH(graphics, x + IntakeLayout.FE_X, y + IntakeLayout.FE_Y,
                 IntakeLayout.FE_WIDTH, IntakeLayout.FE_HEIGHT,
@@ -148,7 +144,7 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
         }
     }
 
-    private void drawMixtureTank(GuiGraphics graphics, int x, int y) {
+    private void drawMixtureTank(GuiGraphics graphics, int x, int y, int mouseX, int mouseY) {
         int width = IntakeLayout.TANK_WIDTH;
         int height = IntakeLayout.TANK_HEIGHT;
         graphics.fill(x, y, x + width, y + height, MeteorosGui.SLOT_DARK);
@@ -173,6 +169,131 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
             int tickY = innerY + innerH - innerH * tick / 4;
             graphics.fill(innerX, tickY, innerX + innerW, tickY + 1, TICK_COLOR);
         }
+
+        int hovered = tankPhaseAt(mouseX, mouseY);
+        if (hovered >= 0) {
+            int[] bounds = segmentBounds(hovered, innerY, innerH);
+            if (bounds != null) {
+                graphics.fill(innerX, bounds[0], innerX + innerW, bounds[1], 0x30FFFFFF);
+            }
+        }
+
+        int selected = Mth.clamp(this.menu.canisterPhaseIndex(), 0, Math.max(0, count - 1));
+        int[] selectedBounds = segmentBounds(selected, innerY, innerH);
+        if (selectedBounds != null) {
+            drawSegmentFrame(graphics, innerX, selectedBounds[0], innerW, selectedBounds[1]);
+        }
+    }
+
+    /** 1 px white frame around the selected colour band. */
+    private static void drawSegmentFrame(GuiGraphics graphics, int x, int top, int width, int bottom) {
+        graphics.fill(x, top, x + width, top + 1, MeteorosGui.SELECTED_FRAME);
+        graphics.fill(x, bottom - 1, x + width, bottom, MeteorosGui.SELECTED_FRAME);
+        graphics.fill(x, top, x + 1, bottom, MeteorosGui.SELECTED_FRAME);
+        graphics.fill(x + width - 1, top, x + width, bottom, MeteorosGui.SELECTED_FRAME);
+    }
+
+    /**
+     * Absolute top/bottom rows of the colour band that belongs to {@code index},
+     * computed with exactly the same proportional stacking as
+     * {@link MeteorosGui#stripV} (segments grow upwards from the bottom, the last
+     * non-empty phase absorbs the rounding remainder).
+     *
+     * @return {@code [top, bottom]} in screen coordinates, or {@code null} when
+     *         the phase has no visible band
+     */
+    private int[] segmentBounds(int index, int innerY, int innerH) {
+        int count = Phase.all().size();
+        if (index < 0 || index >= count) {
+            return null;
+        }
+        long total = this.menu.mixedTotal();
+        if (total <= 0L) {
+            return null;
+        }
+        long[] amounts = new long[count];
+        int last = -1;
+        for (int i = 0; i < count; i++) {
+            amounts[i] = Math.max(0L, this.menu.mixedAmount(i));
+            if (amounts[i] > 0L) {
+                last = i;
+            }
+        }
+        if (last < 0) {
+            return null;
+        }
+        int used = 0;
+        for (int i = 0; i <= last; i++) {
+            long amount = amounts[i];
+            if (amount <= 0L) {
+                continue;
+            }
+            int seg = i == last
+                    ? innerH - used
+                    : (int) Math.round((double) amount / total * innerH);
+            seg = Math.max(0, Math.min(seg, innerH - used));
+            if (seg > 0) {
+                int bottom = innerY + innerH - used;
+                int top = bottom - seg;
+                if (i == index) {
+                    return new int[]{top, bottom};
+                }
+                used += seg;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Phase band under the cursor. Uses the same geometry as {@link #segmentBounds}
+     * so the band that is highlighted is always the band that gets selected.
+     */
+    private int tankPhaseAt(double mouseX, double mouseY) {
+        int x = this.leftPos + IntakeLayout.TANK_X;
+        int y = this.topPos + IntakeLayout.TANK_Y;
+        int innerX = x + 1;
+        int innerY = y + 1;
+        int innerW = IntakeLayout.TANK_WIDTH - 2;
+        int innerH = IntakeLayout.TANK_HEIGHT - 2;
+        if (!inside(mouseX, mouseY, innerX, innerY, innerW, innerH)) {
+            return -1;
+        }
+        long total = this.menu.mixedTotal();
+        if (total <= 0L) {
+            return -1;
+        }
+        int count = Phase.all().size();
+        long[] amounts = new long[count];
+        int last = -1;
+        for (int i = 0; i < count; i++) {
+            amounts[i] = Math.max(0L, this.menu.mixedAmount(i));
+            if (amounts[i] > 0L) {
+                last = i;
+            }
+        }
+        if (last < 0) {
+            return -1;
+        }
+        int used = 0;
+        for (int i = 0; i <= last; i++) {
+            long amount = amounts[i];
+            if (amount <= 0L) {
+                continue;
+            }
+            int seg = i == last
+                    ? innerH - used
+                    : (int) Math.round((double) amount / total * innerH);
+            seg = Math.max(0, Math.min(seg, innerH - used));
+            if (seg > 0) {
+                int bottom = innerY + innerH - used;
+                int top = bottom - seg;
+                if (mouseY >= top && mouseY < bottom) {
+                    return i;
+                }
+                used += seg;
+            }
+        }
+        return -1;
     }
 
     /** Phase currently selected as the extraction target, clamped for safety. */
@@ -190,7 +311,8 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
         boolean accepts = canister.is(MeteorosProtocol.CANISTER.get())
                 || (canister.is(MeteorosProtocol.INFINITE_PARTICLE_CANISTER.get())
                 && !InfiniteParticleCanisterItem.hasPhase(canister));
-        return accepts && this.menu.mixedAmount(this.menu.canisterPhaseIndex()) > 0L;
+        int selected = Mth.clamp(this.menu.canisterPhaseIndex(), 0, Math.max(0, Phase.all().size() - 1));
+        return accepts && this.menu.mixedAmount(selected) > 0L;
     }
 
     /** Six-socket filter ghost: a horizontal cartridge outline, lit at low alpha. */
@@ -234,6 +356,11 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
 
         int x = this.leftPos;
         int y = this.topPos;
+        int tankPhase = tankPhaseAt(mouseX, mouseY);
+        if (tankPhase >= 0) {
+            drawPhaseTooltip(graphics, tankPhase, mouseX, mouseY);
+            return;
+        }
         if (inside(mouseX, mouseY, x + IntakeLayout.TANK_X, y + IntakeLayout.TANK_Y,
                 IntakeLayout.TANK_WIDTH, IntakeLayout.TANK_HEIGHT)) {
             String line = Component.translatable("gui.meteorosprotocol.intake.mixed").getString()
@@ -263,14 +390,8 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
         }
     }
 
-    /** Widget tooltips: phase gauges first, then the three icon buttons. */
+    /** Widget tooltips for the three icon buttons. */
     private boolean drawWidgetTooltips(GuiGraphics graphics, int mouseX, int mouseY) {
-        for (PhaseBarWidget bar : this.phaseBars) {
-            if (bar.isHovered()) {
-                drawPhaseTooltip(graphics, bar.index(), mouseX, mouseY);
-                return true;
-            }
-        }
         if (this.toggleButton != null && this.toggleButton.isHovered()) {
             MeteorosGui.tooltip(graphics, this.font, this.toggleButton.tooltipLines(), mouseX, mouseY,
                     0xFF9A9A9A);

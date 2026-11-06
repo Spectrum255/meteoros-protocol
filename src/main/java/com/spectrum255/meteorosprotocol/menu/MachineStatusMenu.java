@@ -1,5 +1,6 @@
 package com.spectrum255.meteorosprotocol.menu;
 
+import com.spectrum255.meteorosprotocol.MeteorosProtocol;
 import com.spectrum255.meteorosprotocol.client.gui.IntakeLayout;
 import com.spectrum255.meteorosprotocol.machine.MachineBlock;
 import com.spectrum255.meteorosprotocol.machine.MachineBlockEntity;
@@ -12,17 +13,30 @@ import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerData;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Block;
+
+import java.util.List;
 
 /**
  * Shared status menu for the machines without their own layout (thermal
  * generator, phase separator, weather station, weather tank). It has no item
- * slots: the synced ints are, in order, 0 energy, 1 flags (bit 0 enabled,
- * bits 1-2 redstone mode, bit 3 active), 2 mixed total, one slot per phase in
- * the mixed buffer, then one slot per phase tank. With six core phases this is
- * 15 ints; addon phases widen it automatically.
+ * slots: the synced ints are, in order, 0 energy, 1 flags, 2 mixed total, one
+ * slot per phase in the mixed buffer, then one slot per phase tank. With six
+ * core phases this is 15 ints; addon phases widen it automatically.
+ *
+ * <p>Flags layout (index 1): bit 0 enabled, bits 1-2 redstone mode, bit 3
+ * active, bits 4-6 machine kind (0 generic, 1 thermal generator, 2 phase
+ * separator, 3 weather station/tank). The kind lets the client pick which
+ * phases are worth showing without inventing new data indices.
  */
 public class MachineStatusMenu extends AbstractContainerMenu {
     public static final int ENERGY_CAPACITY = 100_000;
+
+    /** Value of the kind field stored in bits 4-6 of the flags int. */
+    public static final int KIND_GENERIC = 0;
+    public static final int KIND_GENERATOR = 1;
+    public static final int KIND_SEPARATOR = 2;
+    public static final int KIND_WEATHER = 3;
 
     private final BlockPos pos;
     private final MachineBlockEntity machine;
@@ -102,6 +116,7 @@ public class MachineStatusMenu extends AbstractContainerMenu {
             int flags = machine.isEnabled() ? 1 : 0;
             flags |= machine.redstoneMode().ordinal() << 1;
             flags |= activeFlag() ? 8 : 0;
+            flags |= machineKind() << 4;
             return flags;
         }
         if (index == 2) {
@@ -124,6 +139,37 @@ public class MachineStatusMenu extends AbstractContainerMenu {
         }
         return machine.getBlockState().hasProperty(MachineBlock.ACTIVE)
                 && machine.getBlockState().getValue(MachineBlock.ACTIVE);
+    }
+
+    /** Encodes the machine family into the 3 high bits of the flags int. */
+    private int machineKind() {
+        if (machine == null) {
+            return KIND_GENERIC;
+        }
+        Block block = machine.getBlockState().getBlock();
+        if (block == MeteorosProtocol.THERMAL_GENERATOR.get()) {
+            return KIND_GENERATOR;
+        }
+        if (block == MeteorosProtocol.PHASE_SEPARATOR.get()) {
+            return KIND_SEPARATOR;
+        }
+        if (block == MeteorosProtocol.WEATHER_STATION.get() || block == MeteorosProtocol.WEATHER_TANK.get()) {
+            return KIND_WEATHER;
+        }
+        return KIND_GENERIC;
+    }
+
+    public int kind() {
+        return (data(1) >> 4) & 7;
+    }
+
+    /** Phases this machine can actually consume or produce; weather blocks use none. */
+    public List<Phase> relevantPhases() {
+        return switch (kind()) {
+            case KIND_GENERATOR -> List.of(Phase.THERMION, Phase.CRYON);
+            case KIND_WEATHER -> List.of();
+            default -> Phase.all();
+        };
     }
 
     public int data(int index) {

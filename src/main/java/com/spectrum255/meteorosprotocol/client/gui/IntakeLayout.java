@@ -18,19 +18,6 @@ public final class IntakeLayout {
     public static final int TANK_WIDTH = 26;
     public static final int TANK_HEIGHT = 40;
 
-    /** Dark backing strip behind the six phase gauges. */
-    public static final int PHASE_BACK_X = 35;
-    public static final int PHASE_BACK_Y = 19;
-    public static final int PHASE_BACK_WIDTH = 37;
-    public static final int PHASE_BACK_HEIGHT = 40;
-
-    /** Six clickable phase gauges: x = PHASE_X + i * PHASE_STEP. */
-    public static final int PHASE_X = 36;
-    public static final int PHASE_Y = 20;
-    public static final int PHASE_WIDTH = 5;
-    public static final int PHASE_HEIGHT = 38;
-    public static final int PHASE_STEP = 6;
-
     /** Horizontal FE bar outer frame (inner 58 x 4). */
     public static final int FE_X = 8;
     public static final int FE_Y = 70;
