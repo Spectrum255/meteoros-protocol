@@ -222,8 +222,11 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         super.render(graphics, mouseX, mouseY, partialTick);
         if (this.sidePanel.visible()) {
-            graphics.fill(this.leftPos, this.topPos, this.leftPos + this.imageWidth,
-                    this.topPos + this.imageHeight, 0x80000000);
+            // Opaque backdrop over the whole container window: the overlay must sit
+            // above the slot grid and the player inventory, not underneath them.
+            graphics.fill(this.leftPos - 1, this.topPos - 1,
+                    this.leftPos + this.imageWidth + 1, this.topPos + this.imageHeight + 1,
+                    0xFF101010);
             this.sidePanel.render(graphics, this.font, this.leftPos, this.topPos,
                     sideMasks(), mouseX, mouseY);
             this.sidePanel.renderTooltip(graphics, this.font, this.leftPos, this.topPos,

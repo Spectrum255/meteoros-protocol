@@ -19,8 +19,6 @@ import snownee.jade.api.IWailaCommonRegistration;
 import snownee.jade.api.IWailaPlugin;
 import snownee.jade.api.WailaPlugin;
 import snownee.jade.api.config.IPluginConfig;
-import snownee.jade.api.ui.BoxStyle;
-import snownee.jade.api.ui.IElementHelper;
 
 /**
  * Optional Jade integration for the particle machines.
@@ -53,7 +51,6 @@ public final class MeteorosJadePlugin implements IWailaPlugin {
         private static final String ROOT = "MeteorosProtocol";
         private static final String PHASE_PREFIX = "Phase.";
         private static final String MIXED_PREFIX = "Mixed.";
-        private static final int ENERGY_COLOR = 0xFFD24B3F;
 
         @Override
         public ResourceLocation getUid() {
@@ -113,17 +110,11 @@ public final class MeteorosJadePlugin implements IWailaPlugin {
                 return;
             }
 
-            IElementHelper helper = IElementHelper.get();
-            BoxStyle box = BoxStyle.getTransparent();
-
             tooltip.add(Component.translatable("jade.meteorosprotocol.header"));
 
-            tooltip.add(helper.progress(
-                    fraction(energy, energyCapacity),
-                    Component.literal(num(energy) + " / " + num(energyCapacity) + " FE"),
-                    helper.progressStyle().color(ENERGY_COLOR),
-                    box,
-                    true));
+            // FE is intentionally not shown here: our own machine screens and the
+            // block entity renderer already display energy, and the user asked for
+            // a compact tooltip (no energy row).
 
             // All phases share one strip: segment widths are proportional to each
             // phase's share of the stored total, and the fill ceiling is the sum of
@@ -181,14 +172,6 @@ public final class MeteorosJadePlugin implements IWailaPlugin {
                 return root.getLong(key);
             }
             return machine != null ? machine.phaseStorage().getAmount(phase) : 0L;
-        }
-
-        private static float fraction(long value, long capacity) {
-            if (capacity <= 0L) {
-                return 0.0F;
-            }
-            float fill = (float) ((double) value / (double) capacity);
-            return Math.max(0.0F, Math.min(1.0F, fill));
         }
 
         private static String num(long value) {

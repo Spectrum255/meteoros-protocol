@@ -81,17 +81,16 @@ public final class MixedStripElement implements IElement {
             return;
         }
         graphics.fill(innerX, innerY, innerX + innerWidth, innerY + innerHeight, TRACK_COLOR);
-        if (total <= 0L || capacity <= 0L) {
+        if (total <= 0L) {
+            // Nothing stored: keep the empty track so the tooltip still shows the bar.
             return;
         }
 
-        int filled = (int) Math.min(innerWidth, Math.round(innerWidth * (double) total / capacity));
-        if (filled <= 0) {
-            return;
-        }
-
-        // Proportional widths (largest-remainder style cumulative rounding) so the
-        // segments always add up to exactly `filled`.
+        // The strip is a composition view: the segments always span the whole inner
+        // width (proportional to each phase's share of `total`). The absolute
+        // total/capacity ratio is printed as text next to the strip instead of
+        // shrinking the fill to a sliver, which used to look like an empty grey box
+        // when a machine only held a few thousand mPU out of 48,000,000.
         int[] widths = new int[amounts.length];
         long cumulative = 0L;
         int previousEdge = 0;
@@ -100,7 +99,7 @@ public final class MixedStripElement implements IElement {
                 continue;
             }
             cumulative += amounts[index];
-            int edge = (int) Math.min(filled, Math.round(innerWidth * (double) cumulative / total));
+            int edge = (int) Math.min(innerWidth, Math.round(innerWidth * (double) cumulative / total));
             widths[index] = edge - previousEdge;
             previousEdge = edge;
         }
