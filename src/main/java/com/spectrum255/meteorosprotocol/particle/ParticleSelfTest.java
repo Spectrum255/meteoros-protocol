@@ -572,6 +572,31 @@ public final class ParticleSelfTest {
         generator.setAutoIo(true);
         generator.loadAdditional(legacyTag, RegistryAccess.EMPTY);
         require(generator.autoIo(), "saves without AutoIo must default to true");
+
+        // Default input whitelist: only the generator is picky. Internal
+        // production writes must bypass the filtered entry points.
+        require(generator.inputPhases().equals(List.of(Phase.THERMION)),
+                "the generator must only accept Thermion from outside");
+        require(separator.inputPhases().equals(Phase.all()),
+                "the separator must accept every phase");
+        require(intake.inputPhases().equals(Phase.all()),
+                "the intake tower must accept every phase");
+        require(port.inputPhases().equals(Phase.all()),
+                "the particle port must accept every phase");
+        require(weather.inputPhases().isEmpty(),
+                "weather blocks must accept no phases");
+        require(generator.insert(Phase.CRYON, 1_000L, false) == 0L,
+                "the generator must reject external Cryon mixed inserts");
+        require(generator.getAmount(Phase.CRYON) == 0L,
+                "a rejected insert must not touch the mixed buffer");
+        require(generator.phaseStorage().insert(Phase.CRYON, 1_000L, false) == 0L,
+                "the generator must reject external Cryon tank inserts");
+        require(generator.insert(Phase.THERMION, 1_000L, false) == 1_000L,
+                "the generator must still accept external Thermion");
+        require(generator.addPhaseInternal(Phase.CRYON, 500L) == 500L,
+                "internal Cryon writes must bypass the whitelist");
+        require(generator.phaseStorage().getAmount(Phase.CRYON) == 500L,
+                "internal Cryon must land in the phase tank");
     }
 
     private static boolean near(float actual, float expected) {

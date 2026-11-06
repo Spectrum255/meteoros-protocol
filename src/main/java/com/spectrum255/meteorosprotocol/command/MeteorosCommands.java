@@ -123,6 +123,19 @@ public final class MeteorosCommands {
         }
         String autoIoLine = "  auto-io: " + (machine.autoIo() ? "on" : "off");
         source.sendSuccess(() -> Component.literal(autoIoLine), false);
+        StringBuilder input = new StringBuilder("  input: ");
+        if (machine.inputPhases().isEmpty()) {
+            input.append("none");
+        } else {
+            for (int index = 0; index < machine.inputPhases().size(); index++) {
+                if (index > 0) {
+                    input.append(", ");
+                }
+                input.append(machine.inputPhases().get(index).shortName().getString());
+            }
+        }
+        String inputLine = input.toString();
+        source.sendSuccess(() -> Component.literal(inputLine), false);
         return 1;
     }
 

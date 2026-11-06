@@ -47,6 +47,8 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
     private static final int TANK_HEIGHT = 26;
 
     private static final int PHASE_X = 44;
+    /** Phase bars move here when the mixed-buffer tank is hidden (separator). */
+    private static final int PHASE_X_HIDDEN = 8;
     private static final int PHASE_Y = 38;
     private static final int PHASE_HEIGHT = 26;
     /** 6 px bars with 8 px pitch match the original six-phase layout. */
@@ -168,11 +170,15 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
 
         List<Phase> phases = this.menu.relevantPhases();
         if (!phases.isEmpty()) {
-            drawMixtureTank(graphics, x + TANK_X, y + TANK_Y);
+            boolean hideMixed = this.menu.hidesMixedBuffer();
+            if (!hideMixed) {
+                drawMixtureTank(graphics, x + TANK_X, y + TANK_Y);
+            }
+            int phaseX = hideMixed ? PHASE_X_HIDDEN : PHASE_X;
             int width = barWidth(phases.size());
             int step = barStep(phases.size());
             for (int position = 0; position < phases.size(); position++) {
-                drawPhaseTank(graphics, x + PHASE_X + position * step, y + PHASE_Y,
+                drawPhaseTank(graphics, x + phaseX + position * step, y + PHASE_Y,
                         phases.get(position), width, mouseX, mouseY);
             }
         }
@@ -354,12 +360,17 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
             Component header = Component.literal(phase.displayName().getString()
                     + ": " + String.format(Locale.ROOT, "%,d", this.menu.tankAmount(phase.index()))
                     + " / " + String.format(Locale.ROOT, "%,d", phase.tankCapacity()) + " mPU");
+            if (this.menu.hidesMixedBuffer()) {
+                MeteorosGui.tooltip(graphics, this.font, List.of(header), mouseX, mouseY, 0xFF9A9A9A);
+                return;
+            }
             Component mixed = Component.literal(String.format(Locale.ROOT, "mixed: %,d mPU",
                     this.menu.mixedAmount(phase.index())));
             MeteorosGui.tooltip(graphics, this.font, List.of(header, mixed), mouseX, mouseY, 0xFF9A9A9A);
             return;
         }
-        if (inside(mouseX, mouseY, x + TANK_X, y + TANK_Y, TANK_WIDTH, TANK_HEIGHT)) {
+        if (!this.menu.hidesMixedBuffer()
+                && inside(mouseX, mouseY, x + TANK_X, y + TANK_Y, TANK_WIDTH, TANK_HEIGHT)) {
             String line = Component.translatable("gui.meteorosprotocol.intake.mixed").getString()
                     + ": " + String.format(Locale.ROOT, "%,d", this.menu.mixedTotal())
                     + " / 1,000,000 mPU";
@@ -377,8 +388,9 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
         List<Phase> phases = this.menu.relevantPhases();
         int width = barWidth(phases.size());
         int step = barStep(phases.size());
+        int phaseX = this.menu.hidesMixedBuffer() ? PHASE_X_HIDDEN : PHASE_X;
         for (int position = 0; position < phases.size(); position++) {
-            int barX = this.leftPos + PHASE_X + position * step;
+            int barX = this.leftPos + phaseX + position * step;
             if (inside(mouseX, mouseY, barX, this.topPos + PHASE_Y, width, PHASE_HEIGHT)) {
                 return phases.get(position);
             }

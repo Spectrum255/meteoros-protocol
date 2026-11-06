@@ -106,6 +106,9 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
 
         @Override
         public long insert(Phase phase, long amount, boolean simulate) {
+            if (!acceptsInput(phase)) {
+                return 0L;
+            }
             long moved = phaseAccepted(phase, amount, phases[phase.index()]);
             if (!simulate && moved > 0L) {
                 phases[phase.index()] += moved;
@@ -510,13 +513,13 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
             if (requested <= 0L) {
                 continue;
             }
-            long moved = phaseStorage.insert(phase, requested, false);
+            long moved = addPhaseInternal(phase, requested);
             if (moved < requested) {
                 // The precheck above makes this theoretically impossible. Put
                 // the shortfall back into the mixed buffer instead of deleting
                 // it, and warn once per machine.
                 long missing = requested - moved;
-                long returned = insert(phase, missing, false);
+                long returned = insertMixedInternal(phase, missing);
                 if (returned < missing && !separatorInsertWarningLogged) {
                     separatorInsertWarningLogged = true;
                     MeteorosProtocol.LOGGER.warn(
@@ -991,7 +994,7 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         long extracted = phaseStorage.extract(phase, accepted, false);
         long inserted = target.insert(phase, extracted, false);
         if (inserted < extracted) {
-            phaseStorage.insert(phase, extracted - inserted, false);
+            addPhaseInternal(phase, extracted - inserted);
         }
         if (inserted > 0L) {
             setChanged();
@@ -1175,7 +1178,7 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
             long extracted = phaseStorage.extract(phase, budget, false);
             long accepted = target.insert(phase, extracted, false);
             if (accepted < extracted) {
-                phaseStorage.insert(phase, extracted - accepted, false);
+                addPhaseInternal(phase, extracted - accepted);
             }
             moved += accepted;
         }
@@ -1243,9 +1246,8 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         long remaining = GENERATOR_OUTPUT_MPU_PER_TICK;
         long pushed = pushToNeighbourStorages(Phase.CRYON, remaining);
         remaining -= pushed;
-        long tankAccepted = remaining > 0L
-                ? phaseStorage.insert(Phase.CRYON, remaining, true)
-                : 0L;
+        long tankSpace = Math.max(0L, Phase.CRYON.tankCapacity() - phases[cryonIndex]);
+        long tankAccepted = Math.min(remaining, tankSpace);
         long overflow = remaining - tankAccepted;
 
         if (fromTank) {
@@ -1256,7 +1258,7 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         }
 
         if (tankAccepted > 0L) {
-            phaseStorage.insert(Phase.CRYON, tankAccepted, false);
+            addPhaseInternal(Phase.CRYON, tankAccepted);
         }
         if (overflow > 0L) {
             long mixedRoom = Math.max(0L, MIXED_CAPACITY - getTotal());
@@ -1680,6 +1682,29 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
     }
 
     /**
+     * Default input whitelist: phases that external inserts may push into this
+     * machine. Only the generator is picky (it burns Thermion and produces
+     * Cryon); weather blocks accept nothing. Internal production is not routed
+     * through the filtered entry points, so a generator can still fill its own
+     * Cryon tank.
+     */
+    public List<Phase> inputPhases() {
+        Block block = getBlockState().getBlock();
+        if (block == MeteorosProtocol.THERMAL_GENERATOR.get()) {
+            return List.of(Phase.THERMION);
+        }
+        if (block == MeteorosProtocol.WEATHER_STATION.get() || block == MeteorosProtocol.WEATHER_TANK.get()) {
+            return List.of();
+        }
+        return Phase.all();
+    }
+
+    /** {@code true} when {@code phase} may be pushed in from outside. */
+    private boolean acceptsInput(Phase phase) {
+        return inputPhases().contains(phase);
+    }
+
+    /**
      * Pushes up to {@code amount} of a freshly produced phase into adjacent
      * {@code PHASE_STORAGE}s (the capability has no direction context, so it is
      * queried with two arguments). Anything the neighbours cannot take is left
@@ -1890,6 +1915,31 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         buffer.writeBlockPos(worldPosition);
     }
 
+    /**
+     * Unfiltered write into a phase tank, used by the machine's own production
+     * paths (generator Cryon, separator output). External callers must go
+     * through {@link #phaseStorage()} so the input whitelist applies.
+     * Public only so the self-test can verify that internal writes bypass it.
+     */
+    public long addPhaseInternal(Phase phase, long amount) {
+        long moved = phaseAccepted(phase, amount, phases[phase.index()]);
+        if (moved > 0L) {
+            phases[phase.index()] += moved;
+            setChanged();
+        }
+        return moved;
+    }
+
+    /** Unfiltered write into the mixed buffer, for internal return paths. */
+    private long insertMixedInternal(Phase phase, long amount) {
+        long moved = mixedAccepted(amount, getTotal());
+        if (moved > 0L) {
+            mixed[phase.index()] += moved;
+            setChanged();
+        }
+        return moved;
+    }
+
     @Override
     public long getAmount(Phase phase) {
         return mixed[phase.index()];
@@ -1903,6 +1953,9 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
 
     @Override
     public long insert(Phase phase, long amount, boolean simulate) {
+        if (!acceptsInput(phase)) {
+            return 0L;
+        }
         long moved = mixedAccepted(amount, getTotal());
         if (!simulate && moved > 0L) {
             mixed[phase.index()] += moved;

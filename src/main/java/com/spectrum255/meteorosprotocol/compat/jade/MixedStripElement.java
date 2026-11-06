@@ -18,7 +18,7 @@ import snownee.jade.api.ui.IElement;
 public final class MixedStripElement implements IElement {
     private static final int BORDER_COLOR = 0xFF373737;
     private static final int TRACK_COLOR = 0xFF555555;
-    private static final float DEFAULT_WIDTH = 100.0F;
+    private static final float DEFAULT_WIDTH = 72.0F;
     private static final float DEFAULT_HEIGHT = 8.0F;
 
     private final int[] colors;

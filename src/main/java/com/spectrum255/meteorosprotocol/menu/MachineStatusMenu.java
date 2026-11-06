@@ -28,8 +28,9 @@ import java.util.List;
  *
  * <p>Flags layout (index 1): bit 0 enabled, bits 1-2 redstone mode, bit 3
  * active, bits 4-6 machine kind (0 generic, 1 thermal generator, 2 phase
- * separator, 3 weather station/tank). The kind lets the client pick which
- * phases are worth showing without inventing new data indices.
+ * separator, 3 weather station/tank), bit 7 hide the mixed-buffer gauge. The
+ * kind lets the client pick which phases are worth showing without inventing
+ * new data indices.
  */
 public class MachineStatusMenu extends AbstractContainerMenu {
     public static final int ENERGY_CAPACITY = (int) MachineBlockEntity.ENERGY_CAPACITY;
@@ -135,6 +136,7 @@ public class MachineStatusMenu extends AbstractContainerMenu {
             flags |= machine.redstoneMode().ordinal() << 1;
             flags |= activeFlag() ? 8 : 0;
             flags |= machineKind() << 4;
+            flags |= machineKind() == KIND_SEPARATOR ? 0x80 : 0;
             return flags;
         }
         if (index == 2) {
@@ -194,6 +196,11 @@ public class MachineStatusMenu extends AbstractContainerMenu {
 
     public int kind() {
         return (data(1) >> 4) & 7;
+    }
+
+    /** True when the mixed buffer is internal plumbing and its gauge should be hidden. */
+    public boolean hidesMixedBuffer() {
+        return (data(1) & 0x80) != 0;
     }
 
     /** Phases this machine can actually consume or produce; weather blocks use none. */
