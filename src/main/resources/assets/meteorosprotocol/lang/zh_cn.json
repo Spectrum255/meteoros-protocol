@@ -66,6 +66,7 @@
   "gui.meteorosprotocol.intake.take": "取出",
   "gui.meteorosprotocol.intake.extract": "抽取：%s",
   "gui.meteorosprotocol.intake.select_hint": "点击柱子选择抽取相",
+  "gui.meteorosprotocol.intake.extract_hint": "点击柱子选择抽取相",
   "gui.meteorosprotocol.intake.work.on": "工作：开",
   "gui.meteorosprotocol.intake.work.off": "工作：关",
   "gui.meteorosprotocol.intake.redstone.control": "红石：控制",

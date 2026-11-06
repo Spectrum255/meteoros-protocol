@@ -1,48 +1,59 @@
 package com.spectrum255.meteorosprotocol.client;
 
 import com.spectrum255.meteorosprotocol.MeteorosProtocol;
+import com.spectrum255.meteorosprotocol.client.gui.IconButton;
 import com.spectrum255.meteorosprotocol.client.gui.IntakeLayout;
 import com.spectrum255.meteorosprotocol.client.gui.MeteorosGui;
+import com.spectrum255.meteorosprotocol.client.gui.PhaseBarWidget;
 import com.spectrum255.meteorosprotocol.item.InfiniteParticleCanisterItem;
 import com.spectrum255.meteorosprotocol.machine.MachineBlockEntity;
 import com.spectrum255.meteorosprotocol.menu.IntakeMenu;
 import com.spectrum255.meteorosprotocol.particle.Phase;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
 /**
  * Intake tower screen: 176 x 180, vanilla-styled container panel with a banded
  * mixture tank, one horizontal FE bar, six phase gauges fed by the mixed buffer,
- * two slots and three vanilla buttons. Clicking a gauge selects the phase to
- * extract; the extract button then pumps that phase into the canister in slot 1.
- * Layout constants live in {@link IntakeLayout} so the menu slots never drift.
+ * two slots and three 20 x 20 icon buttons.
+ *
+ * <p>Both the gauges and the buttons are real widgets, so click dispatch and
+ * hover tracking go through vanilla instead of hand-rolled hit tests. Clicking a
+ * gauge selects the phase to extract; the extract button then pumps that phase
+ * into the canister in slot 1.
  */
 public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
     private static final int TITLE_Y = 6;
     private static final int TITLE_COLOR = 0xFF404040;
     private static final int TICK_COLOR = 0x66000000;
     private static final int GHOST = 0x66C8D0D8;
-    private static final int HOVER_WASH = 0x30FFFFFF;
     private static final int FE_COLOR = 0xFFFF0000;
 
-    /** Vanilla button widgets: 60 x 20, stacked with a 22 px pitch. */
-    private static final int BUTTON_WIDGET_WIDTH = 60;
-    private static final int BUTTON_WIDGET_HEIGHT = 20;
-    private static final int BUTTON_TOGGLE_WIDGET_Y = 18;
-    private static final int BUTTON_REDSTONE_WIDGET_Y = 40;
-    private static final int BUTTON_EXTRACT_WIDGET_Y = 62;
+    /** 20 x 20 square icon buttons on the right of the content band. */
+    private static final int ICON_BUTTON_SIZE = 20;
+    private static final int ICON_BUTTON_X = IntakeLayout.BUTTON_X;
+    private static final int ICON_TOGGLE_Y = 18;
+    private static final int ICON_REDSTONE_Y = 40;
+    private static final int ICON_EXTRACT_Y = 62;
 
-    private Button toggleButton;
-    private Button redstoneButton;
-    private Button extractButton;
+    private static final String ICON_ROOT = "textures/gui/";
+    private static final ResourceLocation ICON_POWER = icon("icon_power");
+    private static final ResourceLocation ICON_REDSTONE = icon("icon_redstone");
+    private static final ResourceLocation ICON_EXTRACT = icon("icon_extract");
+
+    private final List<PhaseBarWidget> phaseBars = new ArrayList<>();
+    private IconButton toggleButton;
+    private IconButton redstoneButton;
+    private IconButton extractButton;
 
     public IntakeScreen(IntakeMenu menu, Inventory inventory, Component title) {
         super(menu, inventory, title);
@@ -50,48 +61,48 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
         this.imageHeight = IntakeLayout.HEIGHT;
     }
 
+    private static ResourceLocation icon(String name) {
+        return ResourceLocation.fromNamespaceAndPath(MeteorosProtocol.MODID, ICON_ROOT + name + ".png");
+    }
+
     @Override
     protected void init() {
         super.init();
-        int buttonX = this.leftPos + IntakeLayout.BUTTON_X;
-        this.toggleButton = this.addRenderableWidget(Button.builder(Component.empty(), button -> sendButton(0))
-                .bounds(buttonX, this.topPos + BUTTON_TOGGLE_WIDGET_Y,
-                        BUTTON_WIDGET_WIDTH, BUTTON_WIDGET_HEIGHT)
-                .build());
-        this.redstoneButton = this.addRenderableWidget(Button.builder(Component.empty(), button -> sendButton(1))
-                .bounds(buttonX, this.topPos + BUTTON_REDSTONE_WIDGET_Y,
-                        BUTTON_WIDGET_WIDTH, BUTTON_WIDGET_HEIGHT)
-                .build());
-        this.extractButton = this.addRenderableWidget(Button.builder(Component.empty(), button -> sendButton(8))
-                .bounds(buttonX, this.topPos + BUTTON_EXTRACT_WIDGET_Y,
-                        BUTTON_WIDGET_WIDTH, BUTTON_WIDGET_HEIGHT)
-                .build());
-        updateButtons();
+
+        this.phaseBars.clear();
+        int barX = this.leftPos + IntakeLayout.PHASE_X;
+        int barY = this.topPos + IntakeLayout.PHASE_Y;
+        for (int position = 0; position < Phase.all().size(); position++) {
+            final int index = position;
+            PhaseBarWidget bar = new PhaseBarWidget(index,
+                    barX + position * IntakeLayout.PHASE_STEP, barY,
+                    IntakeLayout.PHASE_STEP, IntakeLayout.PHASE_HEIGHT,
+                    () -> this.menu.mixedAmount(index),
+                    this.menu::canisterPhaseIndex,
+                    selected -> sendButton(2 + selected));
+            this.phaseBars.add(this.addRenderableWidget(bar));
+        }
+
+        int buttonX = this.leftPos + ICON_BUTTON_X;
+        this.toggleButton = this.addRenderableWidget(new IconButton(buttonX, this.topPos + ICON_TOGGLE_Y,
+                ICON_BUTTON_SIZE, ICON_BUTTON_SIZE, ICON_POWER, this::powerTooltip, button -> sendButton(0)));
+        this.redstoneButton = this.addRenderableWidget(new IconButton(buttonX, this.topPos + ICON_REDSTONE_Y,
+                ICON_BUTTON_SIZE, ICON_BUTTON_SIZE, ICON_REDSTONE, this::redstoneTooltip, button -> sendButton(1)));
+        this.extractButton = this.addRenderableWidget(new IconButton(buttonX, this.topPos + ICON_EXTRACT_Y,
+                ICON_BUTTON_SIZE, ICON_BUTTON_SIZE, ICON_EXTRACT, this::extractTooltip, button -> sendButton(8)));
+
+        updateWidgets();
     }
 
     @Override
     protected void containerTick() {
         super.containerTick();
-        updateButtons();
+        updateWidgets();
     }
 
-    /** Keeps the vanilla button captions and the extract-enabled state in sync. */
-    private void updateButtons() {
-        if (this.toggleButton != null) {
-            boolean work = this.menu.enabled();
-            this.toggleButton.setMessage(Component.translatable(
-                    work ? "gui.meteorosprotocol.intake.work.on" : "gui.meteorosprotocol.intake.work.off"));
-        }
-        if (this.redstoneButton != null) {
-            String redstoneKey = switch (this.menu.redstoneMode()) {
-                case 1 -> "gui.meteorosprotocol.intake.redstone.always";
-                default -> "gui.meteorosprotocol.intake.redstone.control";
-            };
-            this.redstoneButton.setMessage(Component.translatable(redstoneKey));
-        }
+    /** Keeps the extract button enabled state in sync; tooltips are live suppliers. */
+    private void updateWidgets() {
         if (this.extractButton != null) {
-            this.extractButton.setMessage(Component.translatable("gui.meteorosprotocol.intake.extract",
-                    selectedPhase().displayName()));
             this.extractButton.active = extractReady();
         }
     }
@@ -103,12 +114,6 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
         MeteorosGui.panel(graphics, x, y, IntakeLayout.WIDTH, IntakeLayout.HEIGHT);
 
         drawMixtureTank(graphics, x + IntakeLayout.TANK_X, y + IntakeLayout.TANK_Y);
-
-        for (int index = 0; index < Phase.all().size(); index++) {
-            drawPhaseStrip(graphics,
-                    x + IntakeLayout.PHASE_X + index * IntakeLayout.PHASE_STEP,
-                    y + IntakeLayout.PHASE_Y, index, mouseX, mouseY);
-        }
 
         MeteorosGui.barH(graphics, x + IntakeLayout.FE_X, y + IntakeLayout.FE_Y,
                 IntakeLayout.FE_WIDTH, IntakeLayout.FE_HEIGHT,
@@ -166,32 +171,6 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
         }
     }
 
-    private void drawPhaseStrip(GuiGraphics graphics, int x, int y, int index, int mouseX, int mouseY) {
-        Phase phase = Phase.all().get(index);
-        long amount = this.menu.mixedAmount(index);
-        float level = (float) Math.min(1.0, (double) amount / MachineBlockEntity.MIXED_CAPACITY);
-        MeteorosGui.barV(graphics, x, y, IntakeLayout.PHASE_WIDTH, IntakeLayout.PHASE_HEIGHT,
-                level, phase.argb());
-        if (index == this.menu.canisterPhaseIndex()) {
-            drawSelectedFrame(graphics, x, y);
-        }
-        if (inside(mouseX, mouseY, x, y, IntakeLayout.PHASE_WIDTH, IntakeLayout.PHASE_HEIGHT)) {
-            graphics.fill(x, y, x + IntakeLayout.PHASE_WIDTH, y + IntakeLayout.PHASE_HEIGHT, HOVER_WASH);
-        }
-    }
-
-    /** 1 px white frame around the gauge chosen as the extraction phase. */
-    private static void drawSelectedFrame(GuiGraphics graphics, int x, int y) {
-        int left = x - 1;
-        int top = y - 1;
-        int right = x + IntakeLayout.PHASE_WIDTH + 1;
-        int bottom = y + IntakeLayout.PHASE_HEIGHT + 1;
-        graphics.fill(left, top, right, top + 1, 0xFFFFFFFF);
-        graphics.fill(left, bottom - 1, right, bottom, 0xFFFFFFFF);
-        graphics.fill(left, top, left + 1, bottom, 0xFFFFFFFF);
-        graphics.fill(right - 1, top, right, bottom, 0xFFFFFFFF);
-    }
-
     /** Phase currently selected as the extraction target, clamped for safety. */
     private Phase selectedPhase() {
         int index = Mth.clamp(this.menu.canisterPhaseIndex(), 0, Math.max(0, Phase.all().size() - 1));
@@ -245,11 +224,10 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
         if (this.hoveredSlot != null && this.hoveredSlot.hasItem()) {
             return;
         }
-        int phase = phaseAt(mouseX, mouseY);
-        if (phase >= 0) {
-            drawPhaseTooltip(graphics, phase, mouseX, mouseY);
+        if (drawWidgetTooltips(graphics, mouseX, mouseY)) {
             return;
         }
+
         int x = this.leftPos;
         int y = this.topPos;
         if (inside(mouseX, mouseY, x + IntakeLayout.TANK_X, y + IntakeLayout.TANK_Y,
@@ -281,44 +259,61 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
         }
     }
 
+    /** Widget tooltips: phase gauges first, then the three icon buttons. */
+    private boolean drawWidgetTooltips(GuiGraphics graphics, int mouseX, int mouseY) {
+        for (PhaseBarWidget bar : this.phaseBars) {
+            if (bar.isHovered()) {
+                drawPhaseTooltip(graphics, bar.index(), mouseX, mouseY);
+                return true;
+            }
+        }
+        if (this.toggleButton != null && this.toggleButton.isHovered()) {
+            MeteorosGui.tooltip(graphics, this.font, this.toggleButton.tooltipLines(), mouseX, mouseY,
+                    0xFF9A9A9A);
+            return true;
+        }
+        if (this.redstoneButton != null && this.redstoneButton.isHovered()) {
+            MeteorosGui.tooltip(graphics, this.font, this.redstoneButton.tooltipLines(), mouseX, mouseY,
+                    0xFF9A9A9A);
+            return true;
+        }
+        if (this.extractButton != null && this.extractButton.isHovered()) {
+            MeteorosGui.tooltip(graphics, this.font, this.extractButton.tooltipLines(), mouseX, mouseY,
+                    0xFF9A9A9A);
+            return true;
+        }
+        return false;
+    }
+
     /** Phase name, mixed-buffer amount and capacity share, plus the selection hint. */
     private void drawPhaseTooltip(GuiGraphics graphics, int index, int mouseX, int mouseY) {
         Phase value = Phase.all().get(index);
         long amount = this.menu.mixedAmount(index);
         double percent = amount * 100.0 / MachineBlockEntity.MIXED_CAPACITY;
-        Component name = value.displayName();
-        Component line = Component.literal(name.getString()
+        Component line = Component.literal(value.displayName().getString()
                 + ": " + String.format(Locale.ROOT, "%,d", amount) + " mPU ("
                 + String.format(Locale.ROOT, "%.1f", percent) + "%)");
         Component hint = Component.translatable("gui.meteorosprotocol.intake.select_hint");
         MeteorosGui.tooltip(graphics, this.font, List.of(line, hint), mouseX, mouseY, 0xFF9A9A9A);
     }
 
-    private int phaseAt(int mouseX, int mouseY) {
-        for (int index = 0; index < Phase.all().size(); index++) {
-            int barX = this.leftPos + IntakeLayout.PHASE_X + index * IntakeLayout.PHASE_STEP;
-            if (inside(mouseX, mouseY, barX, this.topPos + IntakeLayout.PHASE_Y,
-                    IntakeLayout.PHASE_WIDTH, IntakeLayout.PHASE_HEIGHT)) {
-                return index;
-            }
-        }
-        return -1;
+    private List<Component> powerTooltip() {
+        boolean work = this.menu.enabled();
+        return List.of(Component.translatable(
+                work ? "gui.meteorosprotocol.intake.work.on" : "gui.meteorosprotocol.intake.work.off"));
     }
 
-    @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        // Vanilla buttons get the first chance; the phase bars stay hand-hit-tested.
-        if (super.mouseClicked(mouseX, mouseY, button)) {
-            return true;
-        }
-        if (button == 0) {
-            int phase = phaseAt((int) mouseX, (int) mouseY);
-            if (phase >= 0) {
-                sendButton(2 + phase);
-                return true;
-            }
-        }
-        return false;
+    private List<Component> redstoneTooltip() {
+        String key = this.menu.redstoneMode() == 1
+                ? "gui.meteorosprotocol.intake.redstone.always"
+                : "gui.meteorosprotocol.intake.redstone.control";
+        return List.of(Component.translatable(key));
+    }
+
+    private List<Component> extractTooltip() {
+        return List.of(
+                Component.translatable("gui.meteorosprotocol.intake.extract", selectedPhase().displayName()),
+                Component.translatable("gui.meteorosprotocol.intake.extract_hint"));
     }
 
     private static boolean inside(double mouseX, double mouseY, int x, int y, int width, int height) {

@@ -65,6 +65,7 @@
   "gui.meteorosprotocol.intake.take": "Take",
   "gui.meteorosprotocol.intake.extract": "Extract: %s",
   "gui.meteorosprotocol.intake.select_hint": "Click a bar to choose the phase",
+  "gui.meteorosprotocol.intake.extract_hint": "Click a bar to choose the phase",
   "gui.meteorosprotocol.intake.work.on": "Work: On",
   "gui.meteorosprotocol.intake.work.off": "Work: Off",
   "gui.meteorosprotocol.intake.redstone.control": "Redstone: Control",
