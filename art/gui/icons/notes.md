@@ -1,10 +1,10 @@
-# 按钮图标（16×16，1×）— 进气塔 / 全机器通用
+# 按钮图标（16×16，1×）— 进气塔 / 全机器 / 面配置入口
 
 > 目录：`art/gui/icons/`
 > 生成器：`art/gui/gen_gui_icons.py`（Pillow，确定性；`python art/gui/gen_gui_icons.py`）
-> 用途：20×20 原版 `IconButton` 的 **16×16 原尺寸**图标，逐像素不缩放，居中偏移 `(x+2, y+2)`。
+> 用途：20×20 原版 `IconButton` 的 **16×16 原尺寸**图标，逐像素不缩放，居中偏移 `(x+2, y+2)`；`icon_side` 同时用作「机器面配置」入口图标。
 > 外框规则：所有剪影边界都是 `#33383D`，不用纯黑；透明底，alpha 只有 0/255。
-> 两批：第一批 3 张（`icon_power` / `icon_redstone` / `icon_extract`）已接入；第二批 4 张（`icon_power_off` / `icon_redstone_high` / `icon_redstone_low` / `icon_redstone_always`）为本次交付，`contact-sheet.png` 只排这 4 张。
+> 两批 + 入口：第一批 3 张（`icon_power` / `icon_redstone` / `icon_extract`）已接入；第二批 4 张（`icon_power_off` / `icon_redstone_high` / `icon_redstone_low` / `icon_redstone_always`）为第二批交付；`icon_side` 为机器面配置入口，本次一并加入 contact sheet。
 
 ## 1. 第二批设计意图
 
@@ -24,14 +24,20 @@
 - 为什么用三角而不是带杆箭头：16×16 里 1–2px 宽的箭杆会消失，5×5 实心三角能留下 3px 宽的彩色内部，方向仍可读；低电平用暗红填充，不额外引入灰色。
 - 三态在 1× 的区分不靠单一色相：**亮芯 vs 冷芯**、**上三角 vs 下三角**、**琥珀底座** 三重差异。
 
+### `icon_side.png` — 机器面配置入口
+- 12×12 实心面板：**2px `#33383D` 外框** + 8×8 内部；内部用 1px `#9AA3A8` 画 2 竖 2 横，得到 3×3、每格 2×2 的等格九宫格。
+- 中心格 2×2 填 `#73FBFD`；其余 8 格填 `#F7F4EC` 淡瓷白。选实心瓷白而不是透明：钢线若贴透明边就必须全部改 K，九宫格会变成黑框；实心面让钢线保持 `#9AA3A8`，外轮廓仍只有 2px K。
+- 读法：九宫格=「面/格」，中心青格=「当前要配置的那一面」；1× 下先看到 K 方框，再看到 3×3 格，再看到中心青点。
+- 2px 外框是为了 1× 可读性（1px K + 1px 钢的内圈方案会让 12×12 在灰按钮上偏薄）；与电源环的 2px 厚度一致。
+
 ## 2. 调色板（本批用到的颜色）
 
 | Hex | 用途 | 图标 |
 |---|---|---|
 | `#33383D` | 剪影/描边/暗环/三角边 | 全部 |
-| `#F7F4EC` | 罐身瓷白（旧批） | extract |
-| `#9AA3A8` | 钢盖（旧批） | extract |
-| `#73FBFD` | 冷光：on 竖条、抽取箭头/液面（旧批） | power, extract |
+| `#F7F4EC` | 罐身瓷白（旧批）/ 九宫格其他格 | extract, side |
+| `#9AA3A8` | 钢盖（旧批）/ 九宫格线 | extract, side |
+| `#73FBFD` | 冷光：on 竖条、抽取箭头/液面、九宫格中心格 | power, extract, side |
 | `#2CAFBE` | 冷光暗阶（旧批） | power, extract |
 | `#EB3324` | 亮火头 / high 三角 | redstone, high, always |
 | `#A61E13` | 火头暗底 / low 三角 | redstone, low, always |
@@ -57,20 +63,23 @@
 | `icon_redstone_low.png` | `f012ee51e8f92598` | 88 | 10×12（x4–13, y2–13） | 56% | 181 |
 | `icon_redstone_always.png` | `16510a226dd67379` | 96 | 10×12（x3–12, y2–13） | 56% | 188 |
 | `icon_extract.png`（旧） | `193f7ff5e73016f0` | 112 | 10×12（x3–12, y2–13） | 59% | 193 |
-| `contact-sheet.png`（第二批 4 张） | `39b0c0b0d414566f` | — | 1320×690 | — | — |
+| `icon_side.png`（面配置入口） | `024845b2be15476c` | 144 | 12×12（x2–13, y2–13） | 56% | 158 |
+| `contact-sheet.png`（第二批 4 张 + icon_side） | `044597c9b6383700` | — | 1600×690 | — | 71,819 |
 
-逐色像素（第二批）：
+逐色像素（第二批 + 入口）：
 - `icon_power_off`：K 66、`#D64B3F` 3、`#A83A31` 3。
 - `icon_redstone_high`：K 49、R 21、r 6、Y 4、U 4、u 4。
 - `icon_redstone_low`：K 49、r 27、s 4、U 4、u 4。
 - `icon_redstone_always`：K 54、R 14、D 8、d 8、r 6、Y 4、U 1、u 1。
+- `icon_side`：K 80、p 32、S 28、C 4。
 
 ## 4. 16×16 可读性
 
 - 对原版按钮 `#C6C6C6` 的亮度对比：K `6.93:1`、R `2.44:1`、r `4.37:1`、Z `2.49:1`、z `3.71:1`、D `1.13:1`、d `2.36:1`、s `2.79:1`、C `1.38:1`。
 - 轮廓始终由 `#33383D` 承担（≥6.9:1）；彩色只做内部填充。琥珀 `D` 对灰底只有 1.13:1，所以 always 条靠上下 1px K 边和 8px 宽度成形，不靠色相。
-- 四周留 2–3px 透明边，主体都在 10–12×12 内；没有孤立 1px 点。
+- 四周围 2–3px 透明边，主体都在 10–12×12 内；没有孤立 1px 点。
 - 1× 自检：`power_off` 读作「暗环 + 红竖条」；`high` = 亮火把 + 红上三角；`low` = 暗火把 + 红下三角；`always` = 亮火把 + 琥珀底座。高/低不依赖红/暗红单色差，避免了缩图后糊成一片。
+- `icon_side` 是 12×12 全不透明面（144 px）：2px K 边 80 px（56%）、1px S 线 28 px、中心 C 4 px；1× 下读作「K 方框 + 3×3 钢格 + 青心」。
 
 ## 5. 验证与可复现
 
@@ -82,11 +91,11 @@
 - 剪影占比 ≥30%，不透明像素 ≥60；
 - `#33383D` 对 `#C6C6C6` 对比 ≥4.5:1。
 
-fresh-process 重跑：7 张图标 + `contact-sheet.png` 共 8 个文件 SHA-256 全部一致（2026-11-06 实测）；旧三张 `icon_power` / `icon_redstone` / `icon_extract` 的 hash 与第一批完全相同，未被改动。`contact-sheet` 含字体渲染，换机器/换字体可能变 hash。
+fresh-process 重跑：8 张图标 + `contact-sheet.png` 共 9 个文件 SHA-256 全部一致（2026-11-06 实测）；旧 7 张的 hash 与各自上一版完全相同，未被改动。`contact-sheet` 含字体渲染，换机器/换字体可能变 hash。
 
 ## 6. 接入提示
 
 - 资源路径：`assets/meteorosprotocol/textures/gui/icons/<name>.png`，对应 `meteorosprotocol:gui/icons/<name>`；由 dev 复制，美术侧不写 `src/**`。
-- 按钮状态映射（建议）：电源按钮 `icon_power` / `icon_power_off`；红石三态 `icon_redstone_high` / `icon_redstone_low` / `icon_redstone_always`；抽取按钮 `icon_extract`。
+- 按钮状态映射（建议）：电源按钮 `icon_power` / `icon_power_off`；红石三态 `icon_redstone_high` / `icon_redstone_low` / `icon_redstone_always`；抽取按钮 `icon_extract`；机器面配置入口 `icon_side`。
 - 在 `IconButton` 里按 **16×16 原尺寸**画在 20×20 按钮中央 `(x+2, y+2)`；不要放大、不要额外边框。
 - 不修改 `art/gui/` 下现有 12 张原版风贴图；不改 `src/**`。

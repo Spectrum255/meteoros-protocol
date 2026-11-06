@@ -279,6 +279,22 @@ def icon_extract() -> Grid:
     return g
 
 
+def icon_side() -> Grid:
+    """Machine-face config: 12x12 framed 3x3 grid, 2px K frame, 1px steel
+    rules, centre cell cyan (#73FBFD), other cells porcelain."""
+    g = Grid()
+    g.rect(2, 2, 13, 13, "K")              # 12x12 body, 2px dark frame
+    g.rect(4, 4, 11, 11, "p")              # 8x8 interior
+    for y in range(4, 12):
+        g.set(6, y, "S")
+        g.set(9, y, "S")
+    for x in range(4, 12):
+        g.set(x, 6, "S")
+        g.set(x, 9, "S")
+    g.rect(7, 7, 8, 8, "C")                # centre cell 2x2
+    return g
+
+
 ICON_FUNCS = {
     "icon_power.png": icon_power,
     "icon_power_off.png": icon_power_off,
@@ -287,14 +303,16 @@ ICON_FUNCS = {
     "icon_redstone_low.png": icon_redstone_low,
     "icon_redstone_always.png": icon_redstone_always,
     "icon_extract.png": icon_extract,
+    "icon_side.png": icon_side,
 }
 
-# second batch shown together on the contact sheet
+# second batch + machine-face entry shown together on the contact sheet
 SHEET_NAMES = [
     "icon_power_off.png",
     "icon_redstone_high.png",
     "icon_redstone_low.png",
     "icon_redstone_always.png",
+    "icon_side.png",
 ]
 
 
@@ -411,7 +429,7 @@ def _button_mock(icon: Image.Image, scale: int = 4) -> Image.Image:
 
 
 def contact_sheet(imgs: dict[str, Image.Image]) -> None:
-    W, H = 1320, 690
+    W, H = 1600, 690
     sheet = Image.new("RGBA", (W, H), (16, 16, 16, 255))
     d = ImageDraw.Draw(sheet)
     f_title = _font(34, bold=True)
@@ -420,17 +438,18 @@ def contact_sheet(imgs: dict[str, Image.Image]) -> None:
     f_small = _font(14)
     f_tiny = _font(12)
 
-    d.text((40, 26), "Meteoros Protocol · 按钮图标第二批（16×16，1×）", font=f_title, fill=PAL["p"])
-    d.text((40, 72), "电源关闭态 + 红石高/低/保持开启；原生 16×16 贴到 20×20 原版按钮，不缩放；轮廓 #33383D；透明底",
+    d.text((40, 26), "Meteoros Protocol · 按钮图标（第二批 + 面配置入口，16×16）", font=f_title, fill=PAL["p"])
+    d.text((40, 72), "电源关闭 + 红石高/低/保持开启 + machine face 九宫格；原生 16×16 贴到 20×20 原版按钮，不缩放；轮廓 #33383D",
            font=f_sub, fill=(167, 188, 194, 255))
     d.line([40, 106, W - 40, 106], fill=PAL["K"], width=2)
 
-    cols = [40, 350, 660, 970]
+    cols = [40, 350, 660, 970, 1280]
     descs = {
         "icon_power_off.png": "暗环 + 红竖条：已关闭（off）",
         "icon_redstone_high.png": "亮火把 + 向上箭头：高电平",
         "icon_redstone_low.png": "暗火把 + 向下箭头：低电平",
         "icon_redstone_always.png": "亮火把 + 琥珀横条：保持开启",
+        "icon_side.png": "3×3 九宫格 + 中心青格：六面配置",
     }
     for i, (name, im) in enumerate(imgs.items()):
         x = cols[i]
@@ -466,7 +485,7 @@ def contact_sheet(imgs: dict[str, Image.Image]) -> None:
     d.text((40, 650), "verify: 16×16 / RGBA / alpha 0|255 / bbox ≤12×12 / silhouette=#33383D / no isolated 1px dot",
            font=f_tiny, fill=(167, 188, 194, 255))
     sheet.save(ICONS / "contact-sheet.png")
-    print("  contact-sheet.png   1320x690")
+    print("  contact-sheet.png   1600x690")
 
 
 # --------------------------------------------------------------------- main --

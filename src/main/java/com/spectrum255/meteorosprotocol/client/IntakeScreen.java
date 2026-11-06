@@ -5,6 +5,7 @@ import com.spectrum255.meteorosprotocol.client.gui.IconButton;
 import com.spectrum255.meteorosprotocol.client.gui.IntakeLayout;
 import com.spectrum255.meteorosprotocol.client.gui.MeteorosGui;
 import com.spectrum255.meteorosprotocol.client.gui.PhaseBarWidget;
+import com.spectrum255.meteorosprotocol.client.gui.SideConfigPanel;
 import com.spectrum255.meteorosprotocol.item.InfiniteParticleCanisterItem;
 import com.spectrum255.meteorosprotocol.machine.MachineBlockEntity;
 import com.spectrum255.meteorosprotocol.particle.Phase;
@@ -53,11 +54,17 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
     private static final ResourceLocation ICON_REDSTONE_LOW = icon("icon_redstone_low");
     private static final ResourceLocation ICON_REDSTONE_ALWAYS = icon("icon_redstone_always");
     private static final ResourceLocation ICON_EXTRACT = icon("icon_extract");
+    private static final ResourceLocation ICON_SIDE = icon("icon_side");
+    /** Side-config entry button sits in the top-right of the panel, above the reserved band. */
+    private static final int SIDE_BUTTON_X = 152;
+    private static final int SIDE_BUTTON_Y = 4;
 
     private final List<PhaseBarWidget> phaseBars = new ArrayList<>();
+    private final SideConfigPanel sidePanel = new SideConfigPanel();
     private IconButton toggleButton;
     private IconButton redstoneButton;
     private IconButton extractButton;
+    private IconButton sideButton;
 
     public IntakeScreen(IntakeMenu menu, Inventory inventory, Component title) {
         super(menu, inventory, title);
@@ -80,6 +87,9 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
                 button -> sendButton(1)));
         this.extractButton = this.addRenderableWidget(new IconButton(buttonX, this.topPos + ICON_EXTRACT_Y,
                 ICON_BUTTON_SIZE, ICON_BUTTON_SIZE, ICON_EXTRACT, this::extractTooltip, button -> sendButton(8)));
+        this.sideButton = this.addRenderableWidget(new IconButton(this.leftPos + SIDE_BUTTON_X,
+                this.topPos + SIDE_BUTTON_Y, ICON_BUTTON_SIZE, ICON_BUTTON_SIZE, ICON_SIDE,
+                this::sideTooltip, button -> this.sidePanel.toggle()));
 
         this.phaseBars.clear();
         int count = Math.min(IntakeLayout.PHASE_BAR_COUNT, Phase.all().size());
@@ -209,8 +219,43 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         super.render(graphics, mouseX, mouseY, partialTick);
+        if (this.sidePanel.visible()) {
+            graphics.fill(this.leftPos, this.topPos, this.leftPos + this.imageWidth,
+                    this.topPos + this.imageHeight, 0x80000000);
+            this.sidePanel.render(graphics, this.font, this.leftPos, this.topPos,
+                    this.menu.mixedMask(), this.menu.phaseMask(), mouseX, mouseY);
+            this.sidePanel.renderTooltip(graphics, this.font, this.leftPos, this.topPos,
+                    this.menu.mixedMask(), this.menu.phaseMask(), mouseX, mouseY);
+            return;
+        }
         this.renderTooltip(graphics, mouseX, mouseY);
         drawTooltips(graphics, mouseX, mouseY);
+    }
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (this.sidePanel.visible() && this.sidePanel.mouseClicked(mouseX, mouseY, button,
+                this.leftPos, this.topPos, this.menu.mixedMask(), this.menu.phaseMask(), this::sendButton)) {
+            return true;
+        }
+        return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if (this.sidePanel.visible()) {
+            return true;
+        }
+        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (keyCode == 256 && this.sidePanel.visible()) {
+            this.sidePanel.close();
+            return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     private void drawTooltips(GuiGraphics graphics, int mouseX, int mouseY) {
@@ -260,7 +305,7 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
         }
     }
 
-    /** Widget tooltips for the three icon buttons. */
+    /** Widget tooltips for the three icon buttons and the side-config entry. */
     private boolean drawWidgetTooltips(GuiGraphics graphics, int mouseX, int mouseY) {
         if (this.toggleButton != null && this.toggleButton.isHovered()) {
             MeteorosGui.tooltip(graphics, this.font, this.toggleButton.tooltipLines(), mouseX, mouseY,
@@ -277,7 +322,16 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
                     0xFF9A9A9A);
             return true;
         }
+        if (this.sideButton != null && this.sideButton.isHovered()) {
+            MeteorosGui.tooltip(graphics, this.font, this.sideButton.tooltipLines(), mouseX, mouseY,
+                    0xFF9A9A9A);
+            return true;
+        }
         return false;
+    }
+
+    private List<Component> sideTooltip() {
+        return List.of(Component.translatable("gui.meteorosprotocol.side.open"));
     }
 
     /** Phase name, phase-tank fill, mixed-buffer amount and the selection hint. */

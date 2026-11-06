@@ -154,6 +154,15 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
     /** Phase the intake tower will pump into the loading slot's canister. */
     private Phase canisterPhase = Phase.AETHERON;
 
+    /**
+     * Per-face I/O modes. Two bits per {@link Direction#ordinal()} for each
+     * channel, so the whole configuration fits in two ints and can be synced
+     * through the menu data slots.
+     */
+    private int sideMixedMask;
+    private int sidePhaseMask;
+    private boolean sideConfigInitialised;
+
     /** Extract-only view used by the intake tower's output port. */
     private final MixedStorage extractOnly = new MixedStorage() {
         @Override
@@ -176,6 +185,79 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
             return MachineBlockEntity.this.extract(phase, amount, simulate);
         }
     };
+
+    /** Every face set to {@link SideMode#BOTH} (two bits per direction). */
+    private static final int DEFAULT_ALL_BOTH = 0xFFF;
+
+    /**
+     * Weather blocks have no particle I/O, so their faces start disabled; every
+     * other machine starts with all six faces allowing both directions. Called
+     * lazily because the block state is only reliably available after the block
+     * entity has been attached.
+     */
+    private void ensureSideConfig() {
+        if (sideConfigInitialised) {
+            return;
+        }
+        sideConfigInitialised = true;
+        Block block = getBlockState().getBlock();
+        boolean weather = block == MeteorosProtocol.WEATHER_STATION.get()
+                || block == MeteorosProtocol.WEATHER_TANK.get();
+        int defaults = weather ? 0 : DEFAULT_ALL_BOTH;
+        sideMixedMask = defaults;
+        sidePhaseMask = defaults;
+    }
+
+    /** Reads one face's mode out of a side mask. */
+    public static SideMode modeAt(int mask, Direction direction) {
+        return SideMode.byId((mask >>> (direction.ordinal() * 2)) & 3);
+    }
+
+    /** Replaces one face's mode inside a side mask, leaving the other faces alone. */
+    public static int withMode(int mask, Direction direction, SideMode mode) {
+        int shift = direction.ordinal() * 2;
+        return (mask & ~(3 << shift)) | (mode.id() << shift);
+    }
+
+    public int mixedSideMask() {
+        ensureSideConfig();
+        return sideMixedMask;
+    }
+
+    public int phaseSideMask() {
+        ensureSideConfig();
+        return sidePhaseMask;
+    }
+
+    public SideMode sideMode(Direction direction, SideChannel channel) {
+        ensureSideConfig();
+        return modeAt(channel == SideChannel.MIXED ? sideMixedMask : sidePhaseMask, direction);
+    }
+
+    public void setSideMode(Direction direction, SideChannel channel, SideMode mode) {
+        ensureSideConfig();
+        if (channel == SideChannel.MIXED) {
+            sideMixedMask = withMode(sideMixedMask, direction, mode);
+        } else {
+            sidePhaseMask = withMode(sidePhaseMask, direction, mode);
+        }
+        setChanged();
+    }
+
+    public void cycleSideMode(Direction direction, SideChannel channel, boolean backwards) {
+        SideMode current = sideMode(direction, channel);
+        setSideMode(direction, channel, backwards ? current.previous() : current.next());
+    }
+
+    private boolean allowsIn(Direction direction, SideChannel channel) {
+        SideMode mode = sideMode(direction, channel);
+        return mode == SideMode.IN || mode == SideMode.BOTH;
+    }
+
+    private boolean allowsOut(Direction direction, SideChannel channel) {
+        SideMode mode = sideMode(direction, channel);
+        return mode == SideMode.OUT || mode == SideMode.BOTH;
+    }
 
     public enum RedstoneMode {
         /** Run only while a redstone signal reaches the block. */
@@ -541,6 +623,9 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
             if (!isActiveIoNeighbour(level, neighbour)) {
                 continue;
             }
+            if (!allowsIn(direction, SideChannel.PHASE)) {
+                continue;
+            }
             long got;
             if (fromMixed) {
                 MixedStorage source = level.getCapability(
@@ -572,6 +657,9 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
             if (!isActiveIoNeighbour(level, neighbour)) {
                 continue;
             }
+            if (!allowsIn(direction, SideChannel.MIXED)) {
+                continue;
+            }
             MixedStorage source = level.getCapability(
                     ParticleCapabilities.MIXED_STORAGE, neighbour, direction.getOpposite());
             if (source == null || source == this) {
@@ -593,6 +681,9 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
             if (!isActiveIoNeighbour(level, neighbour)) {
                 continue;
             }
+            if (!allowsOut(direction, SideChannel.PHASE)) {
+                continue;
+            }
             PhaseStorage target = level.getCapability(ParticleCapabilities.PHASE_STORAGE, neighbour);
             if (target == null || target == phaseStorage) {
                 continue;
@@ -611,6 +702,9 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
             }
             BlockPos neighbour = worldPosition.relative(direction);
             if (!isActiveIoNeighbour(level, neighbour)) {
+                continue;
+            }
+            if (!allowsOut(direction, SideChannel.MIXED)) {
                 continue;
             }
             MixedStorage target = level.getCapability(
@@ -771,6 +865,11 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
             return;
         }
         Direction facing = ownState.getValue(MachineBlock.FACING);
+        SideMode mixedMode = sideMode(facing, SideChannel.MIXED);
+        SideMode phaseMode = sideMode(facing, SideChannel.PHASE);
+        if (mixedMode == SideMode.NONE && phaseMode == SideMode.NONE) {
+            return;
+        }
         BlockPos targetPos = pos.relative(facing);
         if (!isActiveIoNeighbour(level, targetPos)) {
             return;
@@ -788,29 +887,38 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
             return;
         }
 
-        boolean hasContents = getTotal() > 0L || !phaseStorage.isEmpty();
-        if (hasContents) {
-            if (mixedTarget != null && getTotal() > 0L) {
-                pushMixedTo(mixedTarget, PIPE_MPU_PER_TRANSFER);
-            }
-            if (phaseTarget != null) {
-                for (Phase phase : Phase.all()) {
-                    if (phases[phase.index()] > 0L) {
-                        pushPhaseTo(phaseTarget, phase, PIPE_PHASE_MPU_PER_TRANSFER);
-                    }
+        if (mixedTarget != null) {
+            boolean hasMixed = getTotal() > 0L;
+            if (mixedMode == SideMode.OUT || (mixedMode == SideMode.BOTH && hasMixed)) {
+                if (hasMixed) {
+                    pushMixedTo(mixedTarget, PIPE_MPU_PER_TRANSFER);
                 }
+            } else if (mixedMode == SideMode.IN || (mixedMode == SideMode.BOTH && !hasMixed)) {
+                pullMixedFrom(mixedTarget, PIPE_MPU_PER_TRANSFER);
             }
-            return;
         }
 
-        if (mixedTarget != null) {
-            pullMixedFrom(mixedTarget, PIPE_MPU_PER_TRANSFER);
-            for (Phase phase : Phase.all()) {
-                pullPhaseFromMixed(mixedTarget, phase, PIPE_PHASE_MPU_PER_TRANSFER);
-            }
-        } else if (phaseTarget != null) {
-            for (Phase phase : Phase.all()) {
-                pullPhaseFromStorage(phaseTarget, phase, PIPE_PHASE_MPU_PER_TRANSFER);
+        // The phase channel is decided independently from the mixed channel.
+        if (phaseMode != SideMode.NONE) {
+            boolean hasPhase = !phaseStorage.isEmpty();
+            if (phaseMode == SideMode.OUT || (phaseMode == SideMode.BOTH && hasPhase)) {
+                if (phaseTarget != null && hasPhase) {
+                    for (Phase phase : Phase.all()) {
+                        if (phases[phase.index()] > 0L) {
+                            pushPhaseTo(phaseTarget, phase, PIPE_PHASE_MPU_PER_TRANSFER);
+                        }
+                    }
+                }
+            } else if (phaseMode == SideMode.IN || (phaseMode == SideMode.BOTH && !hasPhase)) {
+                if (phaseTarget != null) {
+                    for (Phase phase : Phase.all()) {
+                        pullPhaseFromStorage(phaseTarget, phase, PIPE_PHASE_MPU_PER_TRANSFER);
+                    }
+                } else if (mixedTarget != null) {
+                    for (Phase phase : Phase.all()) {
+                        pullPhaseFromMixed(mixedTarget, phase, PIPE_PHASE_MPU_PER_TRANSFER);
+                    }
+                }
             }
         }
     }
@@ -1462,6 +1570,9 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         tag.putBoolean("Enabled", enabled);
         tag.putString("RedstoneMode", redstoneMode.name());
         tag.putString("CanisterPhase", canisterPhase.id());
+        ensureSideConfig();
+        tag.putInt("SideMixed", sideMixedMask);
+        tag.putInt("SidePhase", sidePhaseMask);
     }
 
     @Override
@@ -1502,5 +1613,15 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         }
         Phase savedCanisterPhase = Phase.byId(tag.getString("CanisterPhase"));
         canisterPhase = savedCanisterPhase != null ? savedCanisterPhase : Phase.AETHERON;
+
+        // Older saves have no side configuration; ensureSideConfig() applies the
+        // per-machine defaults, and a stored mask (if present) overrides it.
+        ensureSideConfig();
+        if (tag.contains("SideMixed", Tag.TAG_INT)) {
+            sideMixedMask = tag.getInt("SideMixed");
+        }
+        if (tag.contains("SidePhase", Tag.TAG_INT)) {
+            sidePhaseMask = tag.getInt("SidePhase");
+        }
     }
 }

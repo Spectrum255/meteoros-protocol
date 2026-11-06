@@ -4,8 +4,10 @@ import com.spectrum255.meteorosprotocol.MeteorosProtocol;
 import com.spectrum255.meteorosprotocol.client.gui.IntakeLayout;
 import com.spectrum255.meteorosprotocol.machine.MachineBlock;
 import com.spectrum255.meteorosprotocol.machine.MachineBlockEntity;
+import com.spectrum255.meteorosprotocol.machine.SideChannel;
 import com.spectrum255.meteorosprotocol.particle.Phase;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
@@ -38,6 +40,12 @@ public class MachineStatusMenu extends AbstractContainerMenu {
     public static final int KIND_SEPARATOR = 2;
     public static final int KIND_WEATHER = 3;
 
+    /**
+     * Side-config buttons: 100 + channel*8 + side cycles forward, 200 + ... back.
+     * The range is disjoint from the existing 0/1 control ids.
+     */
+    public static final int SIDE_BUTTON_BASE = 100;
+
     private final BlockPos pos;
     private final MachineBlockEntity machine;
     private final boolean clientSide;
@@ -45,11 +53,13 @@ public class MachineStatusMenu extends AbstractContainerMenu {
     private final int phaseCount;
     private final int mixedBase = 3;
     private final int tankBase;
+    private final int mixedMaskIndex;
+    private final int phaseMaskIndex;
     private ContainerData data;
 
-    /** 3 header ints + mixed buffer + phase tanks. */
+    /** 3 header ints + mixed buffer + phase tanks + the two side masks. */
     public static int dataCount() {
-        return 3 + 2 * Phase.all().size();
+        return 3 + 2 * Phase.all().size() + 2;
     }
 
     public MachineStatusMenu(int containerId, Inventory inventory, MachineBlockEntity machine) {
@@ -69,6 +79,8 @@ public class MachineStatusMenu extends AbstractContainerMenu {
                 : (inventory.player.level().getBlockEntity(pos) instanceof MachineBlockEntity found ? found : null);
         this.phaseCount = Phase.all().size();
         this.tankBase = mixedBase + phaseCount;
+        this.mixedMaskIndex = tankBase + phaseCount;
+        this.phaseMaskIndex = mixedMaskIndex + 1;
         this.syncedData = new int[dataCount()];
 
         for (int row = 0; row < 3; row++) {
@@ -129,6 +141,12 @@ public class MachineStatusMenu extends AbstractContainerMenu {
         if (index >= tankBase && index < tankBase + phaseCount) {
             return (int) Math.min(Integer.MAX_VALUE,
                     machine.phaseStorage().getAmount(Phase.all().get(index - tankBase)));
+        }
+        if (index == mixedMaskIndex) {
+            return machine.mixedSideMask();
+        }
+        if (index == phaseMaskIndex) {
+            return machine.phaseSideMask();
         }
         return 0;
     }
@@ -204,10 +222,33 @@ public class MachineStatusMenu extends AbstractContainerMenu {
         return data(tankBase + index);
     }
 
+    public int mixedMask() {
+        return data(mixedMaskIndex);
+    }
+
+    public int phaseMask() {
+        return data(phaseMaskIndex);
+    }
+
     @Override
     public boolean clickMenuButton(Player player, int id) {
         if (machine == null) {
             return false;
+        }
+        if (id >= SIDE_BUTTON_BASE && id < SIDE_BUTTON_BASE + 200) {
+            boolean backwards = id >= SIDE_BUTTON_BASE + 100;
+            int encoded = id - (backwards ? SIDE_BUTTON_BASE + 100 : SIDE_BUTTON_BASE);
+            int channel = encoded / 8;
+            int side = encoded % 8;
+            if (channel > 1 || side >= Direction.values().length) {
+                return false;
+            }
+            machine.cycleSideMode(
+                    Direction.values()[side],
+                    channel == 0 ? SideChannel.MIXED : SideChannel.PHASE,
+                    backwards);
+            this.broadcastChanges();
+            return true;
         }
         switch (id) {
             case 0 -> machine.setEnabled(!machine.isEnabled());

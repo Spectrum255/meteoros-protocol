@@ -5,8 +5,10 @@ import com.spectrum255.meteorosprotocol.client.gui.IntakeLayout;
 import com.spectrum255.meteorosprotocol.item.CanisterItem;
 import com.spectrum255.meteorosprotocol.item.InfiniteParticleCanisterItem;
 import com.spectrum255.meteorosprotocol.machine.MachineBlockEntity;
+import com.spectrum255.meteorosprotocol.machine.SideChannel;
 import com.spectrum255.meteorosprotocol.particle.Phase;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.world.Container;
 import net.minecraft.world.SimpleContainer;
@@ -27,6 +29,9 @@ import net.minecraft.world.item.ItemStack;
 public class IntakeMenu extends AbstractContainerMenu {
     public static final long ENERGY_CAPACITY = MachineBlockEntity.ENERGY_CAPACITY;
 
+    /** Side-config buttons: 100 + channel*8 + side forward, 200 + ... backwards. */
+    public static final int SIDE_BUTTON_BASE = 100;
+
     private final BlockPos pos;
     private final MachineBlockEntity machine;
     private final Container container;
@@ -37,11 +42,13 @@ public class IntakeMenu extends AbstractContainerMenu {
     private final int canisterTotalIndex;
     private final int mixedBase;
     private final int selectionIndex;
+    private final int mixedMaskIndex;
+    private final int phaseMaskIndex;
     private ContainerData data;
 
-    /** 2 header ints + phase tanks + flags + canister total + mixed buffer + selection. */
+    /** 2 header ints + phase tanks + flags + canister total + mixed buffer + selection + side masks. */
     public static int dataCount() {
-        return 2 * Phase.all().size() + 5;
+        return 2 * Phase.all().size() + 7;
     }
 
     public IntakeMenu(int containerId, Inventory inventory, MachineBlockEntity machine) {
@@ -65,6 +72,8 @@ public class IntakeMenu extends AbstractContainerMenu {
         this.canisterTotalIndex = flagsIndex + 1;
         this.mixedBase = canisterTotalIndex + 1;
         this.selectionIndex = mixedBase + phaseCount;
+        this.mixedMaskIndex = selectionIndex + 1;
+        this.phaseMaskIndex = mixedMaskIndex + 1;
         this.syncedData = new int[dataCount()];
 
         // Filter cartridge slot and canister loading slot.
@@ -144,6 +153,12 @@ public class IntakeMenu extends AbstractContainerMenu {
         if (index == selectionIndex) {
             return machine.canisterPhase().index();
         }
+        if (index == mixedMaskIndex) {
+            return machine.mixedSideMask();
+        }
+        if (index == phaseMaskIndex) {
+            return machine.phaseSideMask();
+        }
         return 0;
     }
 
@@ -189,10 +204,33 @@ public class IntakeMenu extends AbstractContainerMenu {
         return value >= 0 && value < phaseCount ? value : 0;
     }
 
+    public int mixedMask() {
+        return data(mixedMaskIndex);
+    }
+
+    public int phaseMask() {
+        return data(phaseMaskIndex);
+    }
+
     @Override
     public boolean clickMenuButton(Player player, int id) {
         if (machine == null) {
             return false;
+        }
+        if (id >= SIDE_BUTTON_BASE && id < SIDE_BUTTON_BASE + 200) {
+            boolean backwards = id >= SIDE_BUTTON_BASE + 100;
+            int encoded = id - (backwards ? SIDE_BUTTON_BASE + 100 : SIDE_BUTTON_BASE);
+            int channel = encoded / 8;
+            int side = encoded % 8;
+            if (channel > 1 || side >= Direction.values().length) {
+                return false;
+            }
+            machine.cycleSideMode(
+                    Direction.values()[side],
+                    channel == 0 ? SideChannel.MIXED : SideChannel.PHASE,
+                    backwards);
+            this.broadcastChanges();
+            return true;
         }
         if (id >= 2 && id < 2 + phaseCount) {
             machine.setCanisterPhase(Phase.all().get(id - 2));

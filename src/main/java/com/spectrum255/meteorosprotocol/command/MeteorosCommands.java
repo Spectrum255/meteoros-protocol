@@ -11,6 +11,7 @@ import java.util.Locale;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -35,6 +36,7 @@ public final class MeteorosCommands {
         dispatcher.register(Commands.literal("meteoros")
                 .then(Commands.literal("field").executes(ctx -> field(ctx.getSource())))
                 .then(Commands.literal("temp").executes(ctx -> temp(ctx.getSource())))
+                .then(Commands.literal("side").executes(ctx -> side(ctx.getSource())))
                 .then(Commands.literal("phases").executes(ctx -> phases(ctx.getSource())))
                 .then(Commands.literal("selftest").executes(ctx -> selftest(ctx.getSource())))
                 .then(Commands.literal("tank").executes(ctx -> tank(ctx.getSource()))));
@@ -80,6 +82,45 @@ public final class MeteorosCommands {
         source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
                 "  light: block %d + sky %d (darken %d) -> +%.1f T",
                 blockLight, skyLight, skyDarken, heat)), false);
+        return 1;
+    }
+
+    /** Prints the six-face mixed/phase side configuration of the targeted machine. */
+    private static int side(CommandSourceStack source) {
+        ServerLevel level = source.getLevel();
+        BlockPos pos;
+        ServerPlayer player = source.getPlayer();
+        if (player != null) {
+            HitResult hit = player.pick(8.0D, 0.0F, false);
+            if (!(hit instanceof BlockHitResult blockHit)) {
+                source.sendFailure(Component.literal("No block in sight within 8 blocks."));
+                return 0;
+            }
+            pos = blockHit.getBlockPos();
+        } else {
+            pos = BlockPos.containing(source.getPosition());
+        }
+        if (!(level.getBlockEntity(pos) instanceof MachineBlockEntity machine)) {
+            source.sendFailure(Component.literal("That block is not a Meteoros machine."));
+            return 0;
+        }
+        String facing = machine.getBlockState().hasProperty(
+                com.spectrum255.meteorosprotocol.machine.MachineBlock.FACING)
+                ? machine.getBlockState().getValue(
+                        com.spectrum255.meteorosprotocol.machine.MachineBlock.FACING).getName()
+                : "n/a";
+        source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                "Side config @%d,%d,%d (facing=%s)", pos.getX(), pos.getY(), pos.getZ(), facing)), false);
+        for (com.spectrum255.meteorosprotocol.machine.SideChannel channel
+                : com.spectrum255.meteorosprotocol.machine.SideChannel.values()) {
+            StringBuilder line = new StringBuilder("  " + channel.name().toLowerCase(Locale.ROOT) + ":");
+            for (Direction direction : Direction.values()) {
+                line.append(' ').append(direction.getName()).append('=')
+                        .append(machine.sideMode(direction, channel).name());
+            }
+            String text = line.toString();
+            source.sendSuccess(() -> Component.literal(text), false);
+        }
         return 1;
     }
 

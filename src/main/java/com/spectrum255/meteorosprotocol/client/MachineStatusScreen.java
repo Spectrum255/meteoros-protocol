@@ -3,6 +3,7 @@ package com.spectrum255.meteorosprotocol.client;
 import com.spectrum255.meteorosprotocol.MeteorosProtocol;
 import com.spectrum255.meteorosprotocol.client.gui.IconButton;
 import com.spectrum255.meteorosprotocol.client.gui.MeteorosGui;
+import com.spectrum255.meteorosprotocol.client.gui.SideConfigPanel;
 import com.spectrum255.meteorosprotocol.menu.MachineStatusMenu;
 import com.spectrum255.meteorosprotocol.particle.Phase;
 import net.minecraft.client.gui.GuiGraphics;
@@ -74,6 +75,9 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
     private static final ResourceLocation ICON_REDSTONE_HIGH = icon("icon_redstone_high");
     private static final ResourceLocation ICON_REDSTONE_LOW = icon("icon_redstone_low");
     private static final ResourceLocation ICON_REDSTONE_ALWAYS = icon("icon_redstone_always");
+    private static final ResourceLocation ICON_SIDE = icon("icon_side");
+    private static final int SIDE_BUTTON_X = 152;
+    private static final int SIDE_BUTTON_Y = 4;
 
     private static final List<Component> POWER_TOOLTIP = List.of(
             Component.translatable("gui.meteorosprotocol.intake.power.enabled"));
@@ -88,6 +92,8 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
 
     private IconButton toggleButton;
     private IconButton redstoneButton;
+    private IconButton sideButton;
+    private final SideConfigPanel sidePanel = new SideConfigPanel();
 
     public MachineStatusScreen(MachineStatusMenu menu, Inventory inventory, Component title) {
         super(menu, inventory, title);
@@ -103,6 +109,9 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
                 BUTTON_SIZE, BUTTON_SIZE, this::powerIcon, this::powerTooltip, button -> sendButton(0)));
         this.redstoneButton = this.addRenderableWidget(new IconButton(buttonX, this.topPos + BUTTON_REDSTONE_Y,
                 BUTTON_SIZE, BUTTON_SIZE, this::redstoneIcon, this::redstoneTooltip, button -> sendButton(1)));
+        this.sideButton = this.addRenderableWidget(new IconButton(this.leftPos + SIDE_BUTTON_X,
+                this.topPos + SIDE_BUTTON_Y, BUTTON_SIZE, BUTTON_SIZE, ICON_SIDE,
+                this::sideTooltip, button -> this.sidePanel.toggle()));
     }
 
     private ResourceLocation powerIcon() {
@@ -236,8 +245,47 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         super.render(graphics, mouseX, mouseY, partialTick);
+        if (this.sidePanel.visible()) {
+            graphics.fill(this.leftPos, this.topPos, this.leftPos + this.imageWidth,
+                    this.topPos + this.imageHeight, 0x80000000);
+            this.sidePanel.render(graphics, this.font, this.leftPos, this.topPos,
+                    this.menu.mixedMask(), this.menu.phaseMask(), mouseX, mouseY);
+            this.sidePanel.renderTooltip(graphics, this.font, this.leftPos, this.topPos,
+                    this.menu.mixedMask(), this.menu.phaseMask(), mouseX, mouseY);
+            return;
+        }
         this.renderTooltip(graphics, mouseX, mouseY);
         drawTooltips(graphics, mouseX, mouseY);
+    }
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (this.sidePanel.visible() && this.sidePanel.mouseClicked(mouseX, mouseY, button,
+                this.leftPos, this.topPos, this.menu.mixedMask(), this.menu.phaseMask(), this::sendButton)) {
+            return true;
+        }
+        return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if (this.sidePanel.visible()) {
+            return true;
+        }
+        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (keyCode == 256 && this.sidePanel.visible()) {
+            this.sidePanel.close();
+            return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    private List<Component> sideTooltip() {
+        return List.of(Component.translatable("gui.meteorosprotocol.side.open"));
     }
 
     private void drawTooltips(GuiGraphics graphics, int mouseX, int mouseY) {
@@ -250,6 +298,10 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
         }
         if (this.redstoneButton != null && this.redstoneButton.isHovered()) {
             MeteorosGui.tooltip(graphics, this.font, redstoneTooltip(), mouseX, mouseY, 0xFF9A9A9A);
+            return;
+        }
+        if (this.sideButton != null && this.sideButton.isHovered()) {
+            MeteorosGui.tooltip(graphics, this.font, sideTooltip(), mouseX, mouseY, 0xFF9A9A9A);
             return;
         }
         List<Phase> phases = this.menu.relevantPhases();

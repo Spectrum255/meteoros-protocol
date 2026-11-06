@@ -5,8 +5,10 @@ import com.spectrum255.meteorosprotocol.compat.LightHeatParticleModifier;
 import com.spectrum255.meteorosprotocol.compat.TemperatureProbe;
 import com.spectrum255.meteorosprotocol.compat.TemperatureSources;
 import com.spectrum255.meteorosprotocol.machine.MachineBlockEntity;
+import com.spectrum255.meteorosprotocol.machine.SideMode;
 import java.util.ArrayList;
 import java.util.List;
+import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
@@ -40,6 +42,7 @@ public final class ParticleSelfTest {
         check(failures, "machine rates", ParticleSelfTest::machineRates);
         check(failures, "light heat", ParticleSelfTest::lightHeat);
         check(failures, "temperature", ParticleSelfTest::temperature);
+        check(failures, "side config", ParticleSelfTest::sideConfig);
         return failures;
     }
 
@@ -450,6 +453,33 @@ public final class ParticleSelfTest {
                 "block-light heat default must be 0.30");
         require(near(Config.PF_LIGHT_HEAT_SKY.get().floatValue(), 0.15F),
                 "sky-light heat default must be 0.15");
+    }
+
+    private static void sideConfig() {
+        require(SideMode.NONE.next() == SideMode.IN, "NONE.next() must be IN");
+        require(SideMode.IN.next() == SideMode.OUT, "IN.next() must be OUT");
+        require(SideMode.OUT.next() == SideMode.BOTH, "OUT.next() must be BOTH");
+        require(SideMode.BOTH.next() == SideMode.NONE, "BOTH.next() must wrap to NONE");
+        require(SideMode.NONE.previous() == SideMode.BOTH, "NONE.previous() must wrap to BOTH");
+        require(SideMode.byId(-1) == SideMode.NONE && SideMode.byId(4) == SideMode.NONE,
+                "byId must fall back to NONE outside 0..3");
+
+        int mask = MachineBlockEntity.withMode(0, Direction.NORTH, SideMode.BOTH);
+        require(MachineBlockEntity.modeAt(mask, Direction.NORTH) == SideMode.BOTH,
+                "NORTH must round-trip BOTH");
+        require(MachineBlockEntity.modeAt(mask, Direction.SOUTH) == SideMode.NONE,
+                "writing NORTH must not disturb SOUTH");
+        mask = MachineBlockEntity.withMode(mask, Direction.UP, SideMode.IN);
+        require(MachineBlockEntity.modeAt(mask, Direction.UP) == SideMode.IN, "UP must read IN");
+        require(MachineBlockEntity.modeAt(mask, Direction.NORTH) == SideMode.BOTH,
+                "writing UP must not disturb NORTH");
+
+        for (Direction direction : Direction.values()) {
+            require(MachineBlockEntity.modeAt(0xFFF, direction) == SideMode.BOTH,
+                    "the all-BOTH default must read BOTH on every face");
+            require(MachineBlockEntity.modeAt(0, direction) == SideMode.NONE,
+                    "the weather default must read NONE on every face");
+        }
     }
 
     private static boolean near(float actual, float expected) {
