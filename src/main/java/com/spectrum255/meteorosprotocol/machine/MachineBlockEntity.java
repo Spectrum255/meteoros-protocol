@@ -254,7 +254,82 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         }
         if (moved > 0L) {
             energy -= INTAKE_FE_PER_TICK;
+            // Built-in separation: the tower turns the buffer it just filled into
+            // phase-tank contents in the same tick. No extra FE is charged for
+            // this step for now (暂不收费，待平衡).
+            separateMixedIntoTanks(INTAKE_MPU_PER_TICK);
         }
+    }
+
+    /**
+     * Moves up to {@code maxInput} mPU from the mixed buffer into the phase tanks:
+     * takes the buffer's current composition, applies the separator's 95%
+     * efficiency with the shared {@code separatorCarry}, and writes the result
+     * into {@code phases[]}. The whole batch is skipped when any phase tank cannot
+     * fit its share, so no input is consumed and no loss occurs. Used by the
+     * separator every tick and by the intake tower for its built-in separation step.
+     *
+     * @return mPU actually consumed from the mixed buffer (0 when skipped)
+     */
+    private long separateMixedIntoTanks(long maxInput) {
+        long inputTotal = Math.min(Math.max(0L, maxInput), getTotal());
+        if (inputTotal <= 0L) {
+            return 0L;
+        }
+
+        long[] input = ParticleMath.amountsFromShares(inputTotal, shares());
+        long actualInput = 0L;
+        for (int index = 0; index < input.length; index++) {
+            input[index] = Math.min(input[index], mixed[index]);
+            actualInput += input[index];
+        }
+        if (actualInput <= 0L) {
+            return 0L;
+        }
+
+        // 95% with a 0-99 carry gives an exact 5% loss on average without
+        // losing a whole mPU every tick: 25 -> 23, 24, 24, 24 ...
+        long scaled = actualInput * 95L + separatorCarry;
+        long outputTotal = scaled / 100L;
+        long nextCarry = scaled % 100L;
+        long[] output = ParticleMath.amountsFromShares(
+                outputTotal,
+                ParticleMath.sharesFromAmounts(input)
+        );
+
+        // Precheck every phase tank before extracting anything. If any output
+        // cannot fit, skip the whole tick: no input consumed, no energy, no loss.
+        if (!separatorFits(output, phaseAmounts())) {
+            return 0L;
+        }
+
+        for (Phase phase : Phase.all()) {
+            extract(phase, input[phase.index()], false);
+        }
+        for (Phase phase : Phase.all()) {
+            long requested = output[phase.index()];
+            if (requested <= 0L) {
+                continue;
+            }
+            long moved = phaseStorage.insert(phase, requested, false);
+            if (moved < requested) {
+                // The precheck above makes this theoretically impossible. Put
+                // the shortfall back into the mixed buffer instead of deleting
+                // it, and warn once per machine.
+                long missing = requested - moved;
+                long returned = insert(phase, missing, false);
+                if (returned < missing && !separatorInsertWarningLogged) {
+                    separatorInsertWarningLogged = true;
+                    MeteorosProtocol.LOGGER.warn(
+                            "Separator at {} could not place {} mPU of {} after the phase precheck",
+                            getBlockPos(), missing - returned, phase.id()
+                    );
+                }
+            }
+        }
+        separatorCarry = nextCarry;
+        lastSeparatorLoss = actualInput - outputTotal;
+        return actualInput;
     }
 
     /**
@@ -450,64 +525,12 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         if (energy < SEPARATOR_FE_PER_TICK) {
             return;
         }
-
-        long inputTotal = Math.min(SEPARATOR_MAX_INPUT_MPU_PER_TICK, getTotal());
-        if (inputTotal <= 0L) {
+        // The shared 95% conversion lives in separateMixedIntoTanks so the intake
+        // tower can run the same step without an adjacent separator.
+        long processed = separateMixedIntoTanks(SEPARATOR_MAX_INPUT_MPU_PER_TICK);
+        if (processed <= 0L) {
             return;
         }
-
-        long[] input = ParticleMath.amountsFromShares(inputTotal, shares());
-        long actualInput = 0L;
-        for (int index = 0; index < input.length; index++) {
-            input[index] = Math.min(input[index], mixed[index]);
-            actualInput += input[index];
-        }
-        if (actualInput <= 0L) {
-            return;
-        }
-
-        // 95% with a 0-99 carry gives an exact 5% loss on average without
-        // losing a whole mPU every tick: 25 -> 23, 24, 24, 24 ...
-        long scaled = actualInput * 95L + separatorCarry;
-        long outputTotal = scaled / 100L;
-        long nextCarry = scaled % 100L;
-        long[] output = ParticleMath.amountsFromShares(
-                outputTotal,
-                ParticleMath.sharesFromAmounts(input)
-        );
-
-        // Precheck every phase tank before extracting anything. If any output
-        // cannot fit, skip the whole tick: no input consumed, no energy, no loss.
-        if (!separatorFits(output, phaseAmounts())) {
-            return;
-        }
-
-        for (Phase phase : Phase.all()) {
-            extract(phase, input[phase.index()], false);
-        }
-        for (Phase phase : Phase.all()) {
-            long requested = output[phase.index()];
-            if (requested <= 0L) {
-                continue;
-            }
-            long moved = phaseStorage.insert(phase, requested, false);
-            if (moved < requested) {
-                // The precheck above makes this theoretically impossible. Put
-                // the shortfall back into the mixed buffer instead of deleting
-                // it, and warn once per machine.
-                long missing = requested - moved;
-                long returned = insert(phase, missing, false);
-                if (returned < missing && !separatorInsertWarningLogged) {
-                    separatorInsertWarningLogged = true;
-                    MeteorosProtocol.LOGGER.warn(
-                            "Separator at {} could not place {} mPU of {} after the phase precheck",
-                            getBlockPos(), missing - returned, phase.id()
-                    );
-                }
-            }
-        }
-        separatorCarry = nextCarry;
-        lastSeparatorLoss = actualInput - outputTotal;
         energy -= SEPARATOR_FE_PER_TICK;
     }
 
