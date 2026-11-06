@@ -255,9 +255,10 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         if (moved > 0L) {
             energy -= INTAKE_FE_PER_TICK;
             // Built-in separation: the tower turns the buffer it just filled into
-            // phase-tank contents in the same tick. No extra FE is charged for
-            // this step for now (暂不收费，待平衡).
-            separateMixedIntoTanks(INTAKE_MPU_PER_TICK);
+            // phase-tank contents in the same tick. Lossless (100%): the tower is
+            // a capture device, not a refinery, so nothing is dropped. No extra FE
+            // is charged for this step for now (暂不收费，待平衡).
+            separateMixedIntoTanks(INTAKE_MPU_PER_TICK, 100L);
         }
     }
 
@@ -272,6 +273,17 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
      * @return mPU actually consumed from the mixed buffer (0 when skipped)
      */
     private long separateMixedIntoTanks(long maxInput) {
+        return separateMixedIntoTanks(maxInput, 95L);
+    }
+
+    /**
+     * Same as {@link #separateMixedIntoTanks(long)} but with an explicit
+     * efficiency. {@code efficiencyPercent >= 100} means lossless: the whole
+     * batch moves into the phase tanks, no carry is consumed or updated and
+     * {@code lastSeparatorLoss} stays 0. The intake tower uses 100 (无损捕获),
+     * the standalone separator keeps 95.
+     */
+    private long separateMixedIntoTanks(long maxInput, long efficiencyPercent) {
         long inputTotal = Math.min(Math.max(0L, maxInput), getTotal());
         if (inputTotal <= 0L) {
             return 0L;
@@ -289,9 +301,12 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
 
         // 95% with a 0-99 carry gives an exact 5% loss on average without
         // losing a whole mPU every tick: 25 -> 23, 24, 24, 24 ...
-        long scaled = actualInput * 95L + separatorCarry;
-        long outputTotal = scaled / 100L;
-        long nextCarry = scaled % 100L;
+        // 100% is the intake tower's lossless path: nothing is lost and the
+        // separator's carry is left untouched.
+        boolean lossless = efficiencyPercent >= 100L;
+        long scaled = lossless ? actualInput : actualInput * efficiencyPercent + separatorCarry;
+        long outputTotal = lossless ? actualInput : scaled / 100L;
+        long nextCarry = lossless ? separatorCarry : scaled % 100L;
         long[] output = ParticleMath.amountsFromShares(
                 outputTotal,
                 ParticleMath.sharesFromAmounts(input)
@@ -525,8 +540,9 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         if (energy < SEPARATOR_FE_PER_TICK) {
             return;
         }
-        // The shared 95% conversion lives in separateMixedIntoTanks so the intake
-        // tower can run the same step without an adjacent separator.
+        // The 95% conversion lives in separateMixedIntoTanks so the intake tower
+        // can run the same step without an adjacent separator (it passes 100%,
+        // lossless).
         long processed = separateMixedIntoTanks(SEPARATOR_MAX_INPUT_MPU_PER_TICK);
         if (processed <= 0L) {
             return;
