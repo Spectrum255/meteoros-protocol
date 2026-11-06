@@ -152,6 +152,7 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
     };
 
     private boolean enabled = true;
+    private boolean autoIo = true;
     private RedstoneMode redstoneMode = RedstoneMode.ALWAYS_ON;
     /** Phase the intake tower will pump into the loading slot's canister. */
     private Phase canisterPhase = Phase.AETHERON;
@@ -373,6 +374,7 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         // Machines with particle I/O act on their direct neighbours every 5 ticks;
         // pipes keep running their own tickPipe pass and are left out of this one.
         if (block != MeteorosProtocol.PARTICLE_PIPE.get()
+                && machine.autoIo
                 && machine.progress % PIPE_INTERVAL == 0L) {
             machine.tickActiveIo(level, pos);
         }
@@ -1627,6 +1629,18 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         setChanged();
     }
 
+    /** Master switch for this machine's active I/O pass (tickActiveIo). */
+    public boolean autoIo() {
+        return autoIo;
+    }
+
+    public void setAutoIo(boolean autoIo) {
+        if (this.autoIo != autoIo) {
+            this.autoIo = autoIo;
+            setChanged();
+        }
+    }
+
     public RedstoneMode redstoneMode() {
         return redstoneMode;
     }
@@ -1920,7 +1934,7 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
     }
 
     @Override
-    protected void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
+    public void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.saveAdditional(tag, registries);
         tag.put("MixedParticles", ParticleNbt.save(this).getCompound("Particles"));
         tag.put("PhaseParticles", ParticleNbt.save(phaseStorage).getCompound("Particles"));
@@ -1929,6 +1943,7 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         tag.putLong("Progress", progress);
         ContainerHelper.saveAllItems(tag, items.getItems(), registries);
         tag.putBoolean("Enabled", enabled);
+        tag.putBoolean("AutoIo", autoIo);
         tag.putString("RedstoneMode", redstoneMode.name());
         tag.putString("CanisterPhase", canisterPhase.id());
         ensureSideConfig();
@@ -1939,7 +1954,7 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
     }
 
     @Override
-    protected void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
+    public void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.loadAdditional(tag, registries);
 
         // New saves carry MixedParticles/PhaseParticles. Old S1-S3 saves only
@@ -1963,6 +1978,7 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         items.getItems().clear();
         ContainerHelper.loadAllItems(tag, items.getItems(), registries);
         enabled = !tag.contains("Enabled") || tag.getBoolean("Enabled");
+        autoIo = !tag.contains("AutoIo") || tag.getBoolean("AutoIo");
         String savedRedstoneMode = tag.getString("RedstoneMode");
         try {
             redstoneMode = RedstoneMode.valueOf(savedRedstoneMode);

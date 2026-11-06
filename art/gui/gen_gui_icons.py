@@ -295,6 +295,58 @@ def icon_side() -> Grid:
     return g
 
 
+def _autoio_grid(off: bool) -> Grid:
+    """Two curved arrows forming a 12x12 loop (steel outer edge + 2px core).
+    Big 5-3-1 triangle heads at 3 o'clock (down) and 9 o'clock (up) read
+    clockwise; the centre stays empty.  `off` switches to dark grey and adds
+    a 45-degree #D64B3F slash (red, echoing power_off's bar)."""
+    g = Grid()
+    edge = "K" if off else "s"
+    core = "s" if off else "C"
+    for y in range(16):
+        for x in range(16):
+            r = ((x - 7.5) ** 2 + (y - 7.5) ** 2) ** 0.5
+            if 3.2 <= r <= 5.9:
+                g.set(x, y, edge if r > 5.0 else core)
+    # right head: 5-5-3-1 down triangle (base y5..6, tip y8)
+    g.set(9, 5, edge)
+    g.rect(10, 5, 12, 5, core)
+    g.set(13, 5, edge)
+    g.set(9, 6, edge)
+    g.rect(10, 6, 12, 6, core)
+    g.set(13, 6, edge)
+    g.set(10, 7, edge)
+    g.set(11, 7, core)
+    g.set(12, 7, edge)
+    g.set(11, 8, edge)
+    # left head: 1-3-5-5 up triangle (tip y7, base y9..10)
+    g.set(4, 7, edge)
+    g.set(3, 8, edge)
+    g.set(4, 8, core)
+    g.set(5, 8, edge)
+    g.set(2, 9, edge)
+    g.rect(3, 9, 5, 9, core)
+    g.set(6, 9, edge)
+    g.set(2, 10, edge)
+    g.rect(3, 10, 5, 10, core)
+    g.set(6, 10, edge)
+    # 45-degree off slash across the ring (red, like power_off's bar)
+    if off:
+        for y in range(16):
+            for x in range(16):
+                if 14 <= x + y <= 15 and g.g[y][x] != ".":
+                    g.set(x, y, "Z")
+    return g
+
+
+def icon_autoio() -> Grid:
+    return _autoio_grid(False)
+
+
+def icon_autoio_off() -> Grid:
+    return _autoio_grid(True)
+
+
 ICON_FUNCS = {
     "icon_power.png": icon_power,
     "icon_power_off.png": icon_power_off,
@@ -304,16 +356,27 @@ ICON_FUNCS = {
     "icon_redstone_always.png": icon_redstone_always,
     "icon_extract.png": icon_extract,
     "icon_side.png": icon_side,
+    "icon_autoio.png": icon_autoio,
+    "icon_autoio_off.png": icon_autoio_off,
 }
 
-# second batch + machine-face entry shown together on the contact sheet
+# second batch + machine-face entry + auto-I/O shown on the contact sheet
 SHEET_NAMES = [
     "icon_power_off.png",
     "icon_redstone_high.png",
     "icon_redstone_low.png",
     "icon_redstone_always.png",
     "icon_side.png",
+    "icon_autoio.png",
+    "icon_autoio_off.png",
 ]
+
+# boundary colours allowed per icon (outer/inner edges may differ).
+# second value is the colour used for the edge-ratio statistic.
+BOUNDARY = {
+    "icon_autoio.png": ({PAL["s"], PAL["C"]}, PAL["s"]),
+    "icon_autoio_off.png": ({PAL["K"], PAL["s"], PAL["Z"]}, PAL["K"]),
+}
 
 
 # ------------------------------------------------------------------ checks --
@@ -330,7 +393,9 @@ def contrast(a: tuple, b: tuple) -> float:
     return (hi + 0.05) / (lo + 0.05)
 
 
-def verify_one(name: str, im: Image.Image) -> dict:
+def verify_one(name: str, im: Image.Image, allowed=None, edge=PAL["K"]) -> dict:
+    if allowed is None:
+        allowed = {PAL["K"]}
     assert im.size == (16, 16), (name, im.size)
     assert im.mode == "RGBA", (name, im.mode)
     alpha = set(im.getchannel("A").tobytes())
@@ -344,7 +409,8 @@ def verify_one(name: str, im: Image.Image) -> dict:
     assert x0 >= 1 and y0 >= 1 and x1 <= 14 and y1 <= 14, (name, "margin", x0, y0, x1, y1)
     assert x1 - x0 + 1 <= 12 and y1 - y0 + 1 <= 12, (name, "12x12 body", x0, x1, y0, y1)
 
-    # Every silhouette pixel (opaque pixel touching transparency) must be EDGE.
+    # Every silhouette pixel (opaque pixel touching transparency) must be the
+    # icon's outline colour (K by default; dark steel for icon_autoio).
     for y in range(16):
         for x in range(16):
             if im.getpixel((x, y))[3] == 0:
@@ -352,7 +418,7 @@ def verify_one(name: str, im: Image.Image) -> dict:
             for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
                 nx, ny = x + dx, y + dy
                 if not (0 <= nx < 16 and 0 <= ny < 16) or im.getpixel((nx, ny))[3] == 0:
-                    assert im.getpixel((x, y)) == PAL["K"], (name, "outline", x, y, im.getpixel((x, y)))
+                    assert im.getpixel((x, y)) in allowed, (name, "outline", x, y, im.getpixel((x, y)))
                     break
 
     # No isolated 1px dot: each opaque pixel needs >=2 opaque 8-neighbours.
@@ -376,7 +442,7 @@ def verify_one(name: str, im: Image.Image) -> dict:
         if c[3]:
             counts[c] = counts.get(c, 0) + sum(
                 1 for y in range(16) for x in range(16) if im.getpixel((x, y)) == c)
-    edge_ratio = counts.get(PAL["K"], 0) / opaque
+    edge_ratio = counts.get(edge, 0) / opaque
     assert edge_ratio >= 0.30, (name, "edge ratio", round(edge_ratio, 3))
     assert opaque >= 60, (name, "opaque", opaque)
     return {"bbox": (x0, y0, x1, y1), "opaque": opaque, "edge_ratio": edge_ratio,
@@ -385,7 +451,8 @@ def verify_one(name: str, im: Image.Image) -> dict:
 
 def verify(imgs: dict[str, Image.Image]) -> None:
     for name, im in imgs.items():
-        st = verify_one(name, im)
+        allowed, edge = BOUNDARY.get(name, ({PAL["K"]}, PAL["K"]))
+        st = verify_one(name, im, allowed, edge)
         print(f"  {name:18s} bbox={st['bbox']} opaque={st['opaque']:3d} "
               f"edge={st['edge_ratio']:.0%}")
     edge_grey = contrast(PAL["K"], BUTTON_GREY)
@@ -429,7 +496,7 @@ def _button_mock(icon: Image.Image, scale: int = 4) -> Image.Image:
 
 
 def contact_sheet(imgs: dict[str, Image.Image]) -> None:
-    W, H = 1600, 690
+    W, H = 2200, 690
     sheet = Image.new("RGBA", (W, H), (16, 16, 16, 255))
     d = ImageDraw.Draw(sheet)
     f_title = _font(34, bold=True)
@@ -438,18 +505,20 @@ def contact_sheet(imgs: dict[str, Image.Image]) -> None:
     f_small = _font(14)
     f_tiny = _font(12)
 
-    d.text((40, 26), "Meteoros Protocol · 按钮图标（第二批 + 面配置入口，16×16）", font=f_title, fill=PAL["p"])
-    d.text((40, 72), "电源关闭 + 红石高/低/保持开启 + machine face 九宫格；原生 16×16 贴到 20×20 原版按钮，不缩放；轮廓 #33383D",
+    d.text((40, 26), "Meteoros Protocol · 按钮图标（第二批 + 面配置 + 自动 I/O，16×16）", font=f_title, fill=PAL["p"])
+    d.text((40, 72), "电源关闭 + 红石高/低/保持开启 + 面配置九宫格 + 自动 I/O 开/关；原生 16×16 贴到 20×20 原版按钮，不缩放",
            font=f_sub, fill=(167, 188, 194, 255))
     d.line([40, 106, W - 40, 106], fill=PAL["K"], width=2)
 
-    cols = [40, 350, 660, 970, 1280]
+    cols = [40, 350, 660, 970, 1280, 1590, 1900]
     descs = {
         "icon_power_off.png": "暗环 + 红竖条：已关闭（off）",
         "icon_redstone_high.png": "亮火把 + 向上箭头：高电平",
         "icon_redstone_low.png": "暗火把 + 向下箭头：低电平",
         "icon_redstone_always.png": "亮火把 + 琥珀横条：保持开启",
         "icon_side.png": "3×3 九宫格 + 中心青格：六面配置",
+        "icon_autoio.png": "青色双箭头环：自动 I/O 开",
+        "icon_autoio_off.png": "灰环 + 红斜杠：自动 I/O 关",
     }
     for i, (name, im) in enumerate(imgs.items()):
         x = cols[i]
@@ -485,7 +554,7 @@ def contact_sheet(imgs: dict[str, Image.Image]) -> None:
     d.text((40, 650), "verify: 16×16 / RGBA / alpha 0|255 / bbox ≤12×12 / silhouette=#33383D / no isolated 1px dot",
            font=f_tiny, fill=(167, 188, 194, 255))
     sheet.save(ICONS / "contact-sheet.png")
-    print("  contact-sheet.png   1600x690")
+    print("  contact-sheet.png   2200x690")
 
 
 # --------------------------------------------------------------------- main --

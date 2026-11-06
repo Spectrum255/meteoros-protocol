@@ -57,11 +57,12 @@ public class MachineStatusMenu extends AbstractContainerMenu {
     private final int phaseMaskIndex;
     private final int energyMaskIndex;
     private final int itemMaskIndex;
+    private final int autoIoIndex;
     private ContainerData data;
 
-    /** 3 header ints + mixed buffer + phase tanks + the four side masks. */
+    /** 3 header ints + mixed buffer + phase tanks + four side masks + auto I/O. */
     public static int dataCount() {
-        return 3 + 2 * Phase.all().size() + 4;
+        return 3 + 2 * Phase.all().size() + 5;
     }
 
     public MachineStatusMenu(int containerId, Inventory inventory, MachineBlockEntity machine) {
@@ -85,6 +86,7 @@ public class MachineStatusMenu extends AbstractContainerMenu {
         this.phaseMaskIndex = mixedMaskIndex + 1;
         this.energyMaskIndex = phaseMaskIndex + 1;
         this.itemMaskIndex = energyMaskIndex + 1;
+        this.autoIoIndex = itemMaskIndex + 1;
         this.syncedData = new int[dataCount()];
 
         for (int row = 0; row < 3; row++) {
@@ -157,6 +159,9 @@ public class MachineStatusMenu extends AbstractContainerMenu {
         }
         if (index == itemMaskIndex) {
             return machine.itemSideMask();
+        }
+        if (index == autoIoIndex) {
+            return machine.autoIo() ? 1 : 0;
         }
         return 0;
     }
@@ -248,6 +253,11 @@ public class MachineStatusMenu extends AbstractContainerMenu {
         return data(itemMaskIndex);
     }
 
+    /** Master switch for the machine's active I/O pass. */
+    public boolean autoIo() {
+        return data(autoIoIndex) != 0;
+    }
+
     /** Unified accessor: one mask per {@link SideChannel}, in channel order. */
     public int sideMask(SideChannel channel) {
         return switch (channel) {
@@ -281,6 +291,7 @@ public class MachineStatusMenu extends AbstractContainerMenu {
         switch (id) {
             case 0 -> machine.setEnabled(!machine.isEnabled());
             case 1 -> machine.cycleRedstoneMode();
+            case 9 -> machine.setAutoIo(!machine.autoIo());
             default -> {
                 return false;
             }

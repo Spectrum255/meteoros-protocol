@@ -77,8 +77,12 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
     private static final ResourceLocation ICON_REDSTONE_LOW = icon("icon_redstone_low");
     private static final ResourceLocation ICON_REDSTONE_ALWAYS = icon("icon_redstone_always");
     private static final ResourceLocation ICON_SIDE = icon("icon_side");
+    private static final ResourceLocation ICON_AUTOIO_ON = icon("icon_autoio");
+    private static final ResourceLocation ICON_AUTOIO_OFF = icon("icon_autoio_off");
     private static final int SIDE_BUTTON_X = 152;
     private static final int SIDE_BUTTON_Y = 4;
+    private static final int AUTOIO_BUTTON_X = 132;
+    private static final int AUTOIO_BUTTON_Y = 4;
 
     private static final List<Component> POWER_TOOLTIP = List.of(
             Component.translatable("gui.meteorosprotocol.intake.power.enabled"));
@@ -94,6 +98,7 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
     private IconButton toggleButton;
     private IconButton redstoneButton;
     private IconButton sideButton;
+    private IconButton autoIoButton;
     private final SideConfigPanel sidePanel = new SideConfigPanel();
 
     public MachineStatusScreen(MachineStatusMenu menu, Inventory inventory, Component title) {
@@ -113,6 +118,9 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
         this.sideButton = this.addRenderableWidget(new IconButton(this.leftPos + SIDE_BUTTON_X,
                 this.topPos + SIDE_BUTTON_Y, BUTTON_SIZE, BUTTON_SIZE, ICON_SIDE,
                 this::sideTooltip, button -> this.sidePanel.toggle()));
+        this.autoIoButton = this.addRenderableWidget(new IconButton(this.leftPos + AUTOIO_BUTTON_X,
+                this.topPos + AUTOIO_BUTTON_Y, BUTTON_SIZE, BUTTON_SIZE, this::autoIoIcon,
+                this::autoIoTooltip, button -> sendButton(9)));
         // Only the intake tower has item slots; this screen never shows them.
         this.sidePanel.setItemAvailable(false);
     }
@@ -303,6 +311,18 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
         return List.of(Component.translatable("gui.meteorosprotocol.side.open"));
     }
 
+    private ResourceLocation autoIoIcon() {
+        return this.menu.autoIo() ? ICON_AUTOIO_ON : ICON_AUTOIO_OFF;
+    }
+
+    private List<Component> autoIoTooltip() {
+        return List.of(
+                Component.translatable(this.menu.autoIo()
+                        ? "gui.meteorosprotocol.autoio.on"
+                        : "gui.meteorosprotocol.autoio.off"),
+                Component.translatable("gui.meteorosprotocol.autoio.hint"));
+    }
+
     private void drawTooltips(GuiGraphics graphics, int mouseX, int mouseY) {
         if (this.hoveredSlot != null && this.hoveredSlot.hasItem()) {
             return;
@@ -317,6 +337,10 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
         }
         if (this.sideButton != null && this.sideButton.isHovered()) {
             MeteorosGui.tooltip(graphics, this.font, sideTooltip(), mouseX, mouseY, 0xFF9A9A9A);
+            return;
+        }
+        if (this.autoIoButton != null && this.autoIoButton.isHovered()) {
+            MeteorosGui.tooltip(graphics, this.font, autoIoTooltip(), mouseX, mouseY, 0xFF9A9A9A);
             return;
         }
         List<Phase> phases = this.menu.relevantPhases();

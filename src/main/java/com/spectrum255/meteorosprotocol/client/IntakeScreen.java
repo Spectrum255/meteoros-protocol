@@ -56,9 +56,14 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
     private static final ResourceLocation ICON_REDSTONE_ALWAYS = icon("icon_redstone_always");
     private static final ResourceLocation ICON_EXTRACT = icon("icon_extract");
     private static final ResourceLocation ICON_SIDE = icon("icon_side");
+    private static final ResourceLocation ICON_AUTOIO_ON = icon("icon_autoio");
+    private static final ResourceLocation ICON_AUTOIO_OFF = icon("icon_autoio_off");
     /** Side-config entry button sits in the top-right of the panel, above the reserved band. */
     private static final int SIDE_BUTTON_X = 152;
     private static final int SIDE_BUTTON_Y = 4;
+    /** Auto-I/O toggle sits just left of the side-config button. */
+    private static final int AUTOIO_BUTTON_X = 132;
+    private static final int AUTOIO_BUTTON_Y = 4;
 
     private final List<PhaseBarWidget> phaseBars = new ArrayList<>();
     private final SideConfigPanel sidePanel = new SideConfigPanel();
@@ -66,6 +71,7 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
     private IconButton redstoneButton;
     private IconButton extractButton;
     private IconButton sideButton;
+    private IconButton autoIoButton;
 
     public IntakeScreen(IntakeMenu menu, Inventory inventory, Component title) {
         super(menu, inventory, title);
@@ -91,6 +97,9 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
         this.sideButton = this.addRenderableWidget(new IconButton(this.leftPos + SIDE_BUTTON_X,
                 this.topPos + SIDE_BUTTON_Y, ICON_BUTTON_SIZE, ICON_BUTTON_SIZE, ICON_SIDE,
                 this::sideTooltip, button -> this.sidePanel.toggle()));
+        this.autoIoButton = this.addRenderableWidget(new IconButton(this.leftPos + AUTOIO_BUTTON_X,
+                this.topPos + AUTOIO_BUTTON_Y, ICON_BUTTON_SIZE, ICON_BUTTON_SIZE, this::autoIoIcon,
+                this::autoIoTooltip, button -> sendButton(9)));
         this.sidePanel.setItemAvailable(true);
 
         this.phaseBars.clear();
@@ -341,7 +350,24 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
                     0xFF9A9A9A);
             return true;
         }
+        if (this.autoIoButton != null && this.autoIoButton.isHovered()) {
+            MeteorosGui.tooltip(graphics, this.font, this.autoIoButton.tooltipLines(), mouseX, mouseY,
+                    0xFF9A9A9A);
+            return true;
+        }
         return false;
+    }
+
+    private ResourceLocation autoIoIcon() {
+        return this.menu.autoIo() ? ICON_AUTOIO_ON : ICON_AUTOIO_OFF;
+    }
+
+    private List<Component> autoIoTooltip() {
+        return List.of(
+                Component.translatable(this.menu.autoIo()
+                        ? "gui.meteorosprotocol.autoio.on"
+                        : "gui.meteorosprotocol.autoio.off"),
+                Component.translatable("gui.meteorosprotocol.autoio.hint"));
     }
 
     private List<Component> sideTooltip() {

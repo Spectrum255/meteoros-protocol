@@ -121,6 +121,8 @@ public final class MeteorosCommands {
             String text = line.toString();
             source.sendSuccess(() -> Component.literal(text), false);
         }
+        String autoIoLine = "  auto-io: " + (machine.autoIo() ? "on" : "off");
+        source.sendSuccess(() -> Component.literal(autoIoLine), false);
         return 1;
     }
 

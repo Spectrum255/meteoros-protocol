@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.RegistryAccess;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Blocks;
@@ -555,6 +556,22 @@ public final class ParticleSelfTest {
                 "an OUT item face must reject inserts");
         require(intake.itemHandlerForSide(Direction.UP).extractItem(1, 1, false).getCount() == 1,
                 "an OUT item face must allow canister extraction");
+
+        // Auto-I/O master switch: defaults on, round-trips through NBT as "AutoIo".
+        require(generator.autoIo(), "auto I/O must default to true");
+        generator.setAutoIo(false);
+        require(!generator.autoIo(), "setAutoIo(false) must stick");
+        CompoundTag autoIoTag = new CompoundTag();
+        generator.saveAdditional(autoIoTag, RegistryAccess.EMPTY);
+        require(autoIoTag.contains("AutoIo"), "auto I/O must save under the 'AutoIo' key");
+        require(!autoIoTag.getBoolean("AutoIo"), "AutoIo must persist the off state");
+        generator.setAutoIo(true);
+        generator.loadAdditional(autoIoTag, RegistryAccess.EMPTY);
+        require(!generator.autoIo(), "loadAdditional must restore auto I/O = false");
+        CompoundTag legacyTag = new CompoundTag();
+        generator.setAutoIo(true);
+        generator.loadAdditional(legacyTag, RegistryAccess.EMPTY);
+        require(generator.autoIo(), "saves without AutoIo must default to true");
     }
 
     private static boolean near(float actual, float expected) {
