@@ -206,7 +206,7 @@ public class MachineStatusMenu extends AbstractContainerMenu {
     /** Phases this machine can actually consume or produce; weather blocks use none. */
     public List<Phase> relevantPhases() {
         return switch (kind()) {
-            case KIND_GENERATOR -> List.of(Phase.THERMION, Phase.CRYON);
+            case KIND_GENERATOR -> List.of(Phase.THERMION);
             case KIND_WEATHER -> List.of();
             default -> Phase.all();
         };

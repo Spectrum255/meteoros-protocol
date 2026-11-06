@@ -31,6 +31,20 @@ public final class Phase {
     public static final Phase VOLTIX_NEG = core("voltix_neg", 0x9A5CFF, 4);
     public static final Phase AQUANTUM = core("aquantum", 0x3A54E0, 5);
 
+    /**
+     * The first non-core phase: impure aetheron, the degraded form of the
+     * ambient medium. It is not part of the atmospheric field itself; its sampler
+     * tracks 10% of the local pure aetheron, and the intake tower captures it
+     * instead of the pure phase. Registered right after the six core phases so
+     * it receives the first addon index (6).
+     */
+    public static final Phase IMPURE_AETHERON = Phase.builder(
+                    ResourceLocation.fromNamespaceAndPath(CORE_NAMESPACE, "impure_aetheron"))
+            .color(0xB9BDC0)
+            .atmospheric(false)
+            .sampler((level, pos, base) -> base.aetheron() * 0.10F)
+            .build();
+
     private static final List<Phase> CORE_PHASES =
             List.of(AETHERON, THERMION, CRYON, VOLTIX_POS, VOLTIX_NEG, AQUANTUM);
 

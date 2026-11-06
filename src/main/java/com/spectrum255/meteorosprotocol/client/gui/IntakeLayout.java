@@ -13,9 +13,12 @@ public final class IntakeLayout {
     public static final int TITLE_Y = 6;
 
     /**
-     * Six hollow phase-tank bars. The old tank frame is gone: the bars themselves
-     * fill the whole former tank area (7..72), each 10 px wide with an 11 px step,
-     * so the 1 px gaps between bars are covered by the hit boxes.
+     * Phase-tank bars. Up to six phases use the historical 10 px bar with an
+     * 11 px step, filling the former tank area (7..72). Extra phases (the
+     * registry now ships impure aetheron as a seventh phase) narrow the bars so
+     * they still fit the same 65 px band: call {@link #phaseBarWidth(int)} and
+     * {@link #phaseBarStep(int)} instead of the constants once the phase count
+     * may exceed six.
      */
     public static final int PHASE_BAR_COUNT = 6;
     public static final int PHASE_BAR_X = 7;
@@ -25,6 +28,31 @@ public final class IntakeLayout {
     public static final int PHASE_BAR_STEP = 11;
     /** Hit boxes span the full step, so adjacent bars never leave a dead 1 px gap. */
     public static final int PHASE_BAR_HIT_WIDTH = 11;
+
+    /** Total width available to the phase bars: x 7..72 inclusive. */
+    private static final int PHASE_BAR_SPAN = 65;
+
+    /**
+     * Visible bar width for {@code count} phases. Six phases keep 10 px; seven or
+     * more shrink so the whole row fits the 65 px band with 1 px gaps (seven ->
+     * 8 px, step 9: 7 * 8 + 6 * 1 = 62).
+     */
+    public static int phaseBarWidth(int count) {
+        if (count <= 0) {
+            return PHASE_BAR_WIDTH;
+        }
+        return Math.max(4, Math.min(PHASE_BAR_WIDTH, (PHASE_BAR_SPAN - (count - 1)) / count));
+    }
+
+    /** Distance between two bar left edges: one visible bar plus a 1 px gap. */
+    public static int phaseBarStep(int count) {
+        return phaseBarWidth(count) + 1;
+    }
+
+    /** Click width for one bar; spans the full step so the gaps stay clickable. */
+    public static int phaseBarHitWidth(int count) {
+        return phaseBarStep(count);
+    }
 
     /** Mixed-buffer bar below the tank (proportion of MIXED_CAPACITY). */
     public static final int MIXED_BAR_X = 8;

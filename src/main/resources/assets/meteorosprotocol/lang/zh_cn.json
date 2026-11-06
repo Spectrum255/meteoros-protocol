@@ -40,6 +40,8 @@
   "phase.meteorosprotocol.voltix_neg.short": "负",
   "phase.meteorosprotocol.aquantum": "流量子",
   "phase.meteorosprotocol.aquantum.short": "水",
+  "phase.meteorosprotocol.impure_aetheron": "亚纯度以太元粒子",
+  "phase.meteorosprotocol.impure_aetheron.short": "亚Ae",
 
   "jade.meteorosprotocol.header": "粒子储库",
   "jade.meteorosprotocol.energy": "FE：%1$s / %2$s",

@@ -23,9 +23,10 @@ import net.minecraft.world.level.block.state.properties.BlockStateProperties;
  * {@code /meteoros selftest} and never needs a world: all formula checks go
  * through the pure {@link SimpleBiomeField#compute} entry point.
  *
- * <p>The checks are phase-count agnostic: they assert that the six core phases
- * come first, in order, and derive every array size from
- * {@link Phase#all()} so addon phases do not break them.</p>
+ * <p>Most checks are phase-count agnostic: they assert that the six core phases
+ * come first, in order, and derive every array size from {@link Phase#all()} so
+ * addon phases do not break them. The registry group additionally pins the main
+ * mod's own seventh phase, impure aetheron.</p>
  */
 public final class ParticleSelfTest {
     private ParticleSelfTest() {
@@ -97,6 +98,20 @@ public final class ParticleSelfTest {
                 "byId must accept a namespaced id");
         require(Phase.byId("voltix") == null, "legacy voltix must not map to a phase");
         require(Phase.byId("not_a_phase") == null, "unknown id must return null");
+
+        // The main mod ships one addon phase of its own: impure aetheron.
+        require(all.size() == 7, "expected six core phases plus impure aetheron");
+        Phase impure = Phase.IMPURE_AETHERON;
+        require(!impure.core(), "impure aetheron must not be a core phase");
+        require(!impure.atmospheric(), "impure aetheron is not part of the atmospheric field");
+        require(impure.index() == 6, "impure aetheron must take the first addon index");
+        require(impure.rgb() == 0xB9BDC0, "impure aetheron colour");
+        require(all.get(6) == impure, "impure aetheron must be the last phase in Phase.all()");
+        PhaseSampler impureSampler = PhaseSamplers.sampler(impure);
+        require(impureSampler != null, "impure aetheron needs a sampler");
+        FieldSample aeBase = new FieldSample(0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 10.0F);
+        require(near(impureSampler.sample(null, null, aeBase), 1.0F),
+                "impure aetheron sampler must track 10% of the local Aetheron");
     }
 
     private static void normalize() {
@@ -331,7 +346,7 @@ public final class ParticleSelfTest {
         require(MachineBlockEntity.GENERATOR_INPUT_MPU_PER_TICK == 25L,
                 "generator must consume 25 mPU T/t");
         require(MachineBlockEntity.GENERATOR_OUTPUT_MPU_PER_TICK == 25L,
-                "generator must produce 25 mPU C/t");
+                "the upgraded generator's byproduct budget stays 25 mPU/t");
         require(MachineBlockEntity.GENERATOR_FE_PER_TICK == 500L,
                 "generator must produce 500 FE/t (20 FE per mPU)");
         require(MachineBlockEntity.GENERATOR_FE_PER_TICK
@@ -597,6 +612,46 @@ public final class ParticleSelfTest {
                 "internal Cryon writes must bypass the whitelist");
         require(generator.phaseStorage().getAmount(Phase.CRYON) == 500L,
                 "internal Cryon must land in the phase tank");
+
+        // Impure aetheron: never accepted from outside; the generator byproduct
+        // path is gated behind an upgrade that does not exist yet.
+        require(generator.insert(Phase.IMPURE_AETHERON, 1_000L, false) == 0L,
+                "the generator must reject external impure Aetheron mixed inserts");
+        require(generator.phaseStorage().insert(Phase.IMPURE_AETHERON, 1_000L, false) == 0L,
+                "the generator must reject external impure Aetheron tank inserts");
+        require(generator.addPhaseInternal(Phase.IMPURE_AETHERON, 500L) == 500L,
+                "internal impure Aetheron writes must bypass the whitelist");
+        require(generator.relevantPhases().equals(List.of(Phase.THERMION)),
+                "a bare generator only shows Thermion: it has no byproduct");
+        require(!generator.hasGeneratorUpgrade(), "the generator upgrade slot is not implemented yet");
+
+        // The tower filters pure Aetheron out of the captured mixture but keeps
+        // the impure form.
+        float[] shares = new float[Phase.all().size()];
+        shares[Phase.AETHERON.index()] = 60.0F;
+        shares[Phase.IMPURE_AETHERON.index()] = 6.0F;
+        MachineBlockEntity.zeroPureAetheronShare(shares);
+        require(shares[Phase.AETHERON.index()] == 0.0F,
+                "the intake tower must not capture pure Aetheron");
+        require(shares[Phase.IMPURE_AETHERON.index()] == 6.0F,
+                "the intake tower must keep capturing impure Aetheron");
+
+        // A bare generator burns Thermion for FE only: +500 FE and no byproduct.
+        generator.addPhaseInternal(Phase.THERMION,
+                MachineBlockEntity.GENERATOR_INPUT_MPU_PER_TICK);
+        long energyBefore = generator.energy();
+        long mixedBefore = generator.getTotal();
+        long tankImpureBefore = generator.phaseStorage().getAmount(Phase.IMPURE_AETHERON);
+        require(generator.runGeneratorTickForSelfTest(),
+                "the generator must run with one operation of Thermion in its tank");
+        require(generator.energy() == energyBefore + MachineBlockEntity.GENERATOR_FE_PER_TICK,
+                "a generator tick must add 500 FE");
+        require(generator.getAmount(Phase.IMPURE_AETHERON) == 0L,
+                "a bare generator must not spill impure Aetheron into the mixed buffer");
+        require(generator.phaseStorage().getAmount(Phase.IMPURE_AETHERON) == tankImpureBefore,
+                "a bare generator must not produce impure Aetheron");
+        require(generator.getTotal() == mixedBefore,
+                "a generator tick must not change the mixed buffer");
     }
 
     private static boolean near(float actual, float expected) {

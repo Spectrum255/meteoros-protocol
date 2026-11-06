@@ -55,6 +55,11 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
     public static final long SEPARATOR_FE_PER_TICK = 25L;
 
     public static final long GENERATOR_INPUT_MPU_PER_TICK = 25L;
+    /**
+     * Byproduct budget of an <em>upgraded</em> generator, in mPU per operation.
+     * A bare generator produces no byproduct (see {@link #hasGeneratorUpgrade()}),
+     * so this constant is not the current output rate.
+     */
     public static final long GENERATOR_OUTPUT_MPU_PER_TICK = 25L;
     /**
      * 20 FE per mPU burned. A single intake tower captures 25 mPU/t, so one
@@ -411,6 +416,10 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         // removes unselected phases and lowers throughput by the selected
         // share (the docs' 2 PU/s * selected share, rescaled to 25 mPU/t).
         float[] shares = sample.composition();
+        // The tower only captures the degraded form of the ambient medium: pure
+        // Aetheron is the medium itself and passes straight through. Impure
+        // Aetheron keeps its sampler share and is captured normally.
+        zeroPureAetheronShare(shares);
         long volume = Math.min(INTAKE_MPU_PER_TICK, remaining);
         ItemStack filterStack = items.getItem(0);
         if (filterStack.getItem() instanceof FilterItem) {
@@ -446,6 +455,19 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
             // a capture device, not a refinery, so nothing is dropped. No extra FE
             // is charged for this step for now (暂不收费，待平衡).
             separateMixedIntoTanks(INTAKE_MPU_PER_TICK, 100L);
+        }
+    }
+
+    /**
+     * Zeros the pure Aetheron entry of a composition array. The intake tower
+     * never captures pure Aetheron (it is the ambient medium itself); only its
+     * degraded form, impure Aetheron, is collected. Shared with the self-test so
+     * the rule is verifiable without a level.
+     */
+    public static void zeroPureAetheronShare(float[] shares) {
+        int index = Phase.AETHERON.index();
+        if (shares != null && index >= 0 && index < shares.length) {
+            shares[index] = 0.0F;
         }
     }
 
@@ -1223,13 +1245,20 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         energy -= SEPARATOR_FE_PER_TICK;
     }
 
-    /** Runs one 25 T -> 25 C conversion; returns whether the machine actually worked this tick. */
+    /**
+     * Runs one 25 T -> 500 FE conversion; returns whether the machine actually
+     * worked this tick.
+     *
+     * <p>A bare thermal generator has no byproduct: the Thermion is consumed and
+     * only FE comes out. The impure-aetheron product path is kept behind
+     * {@link #hasGeneratorUpgrade()}, which stays false until the machine upgrade
+     * slot ships.</p>
+     */
     private boolean tickGenerator() {
         if (energy > ENERGY_CAPACITY - GENERATOR_FE_PER_TICK) {
             return false;
         }
         int thermionIndex = Phase.THERMION.index();
-        int cryonIndex = Phase.CRYON.index();
 
         // Thermion comes from the phase tank; when the tank holds less than one
         // operation, take the whole input from the mixed buffer instead.
@@ -1240,16 +1269,6 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
             return false;
         }
 
-        // v2 replaces the old T -> Ae recipe with T -> C. Fresh Cryon is pushed
-        // into adjacent phase storages first; whatever they cannot take goes into
-        // the local tank, and only a full tank spills into the mixed buffer.
-        long remaining = GENERATOR_OUTPUT_MPU_PER_TICK;
-        long pushed = pushToNeighbourStorages(Phase.CRYON, remaining);
-        remaining -= pushed;
-        long tankSpace = Math.max(0L, Phase.CRYON.tankCapacity() - phases[cryonIndex]);
-        long tankAccepted = Math.min(remaining, tankSpace);
-        long overflow = remaining - tankAccepted;
-
         if (fromTank) {
             phaseStorage.extract(Phase.THERMION, GENERATOR_INPUT_MPU_PER_TICK, false);
         } else {
@@ -1257,20 +1276,61 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
             setChanged();
         }
 
+        energy = Math.min(ENERGY_CAPACITY, energy + GENERATOR_FE_PER_TICK);
+
+        // Byproduct: gated until a generator upgrade is installed. With the
+        // upgrade the consumed Thermion will also yield impure Aetheron.
+        if (hasGeneratorUpgrade()) {
+            emitGeneratorByproduct();
+        }
+        return true;
+    }
+
+    /**
+     * Whether this generator carries an upgrade that unlocks its byproduct. The
+     * upgrade slot is reserved but not implemented yet, so this is always false:
+     * a bare generator emits only FE.
+     */
+    public boolean hasGeneratorUpgrade() {
+        return false;
+    }
+
+    /**
+     * Emits one operation's worth of impure aetheron as the generator's
+     * byproduct. Only reached once a generator upgrade exists; neighbour
+     * storages are filled first, then the local tank, and only a full tank spills
+     * into the mixed buffer.
+     */
+    private void emitGeneratorByproduct() {
+        int productIndex = Phase.IMPURE_AETHERON.index();
+        long remaining = GENERATOR_OUTPUT_MPU_PER_TICK;
+        long pushed = pushToNeighbourStorages(Phase.IMPURE_AETHERON, remaining);
+        remaining -= pushed;
+        long tankSpace = Math.max(0L, Phase.IMPURE_AETHERON.tankCapacity() - phases[productIndex]);
+        long tankAccepted = Math.min(remaining, tankSpace);
+        long overflow = remaining - tankAccepted;
+
         if (tankAccepted > 0L) {
-            addPhaseInternal(Phase.CRYON, tankAccepted);
+            addPhaseInternal(Phase.IMPURE_AETHERON, tankAccepted);
         }
         if (overflow > 0L) {
             long mixedRoom = Math.max(0L, MIXED_CAPACITY - getTotal());
             long mixedAccepted = Math.min(overflow, mixedRoom);
             if (mixedAccepted > 0L) {
-                mixed[cryonIndex] += mixedAccepted;
+                mixed[productIndex] += mixedAccepted;
                 setChanged();
             }
         }
+    }
 
-        energy = Math.min(ENERGY_CAPACITY, energy + GENERATOR_FE_PER_TICK);
-        return true;
+    /**
+     * Runs one generator tick for the self-test. The conversion itself is
+     * level-independent (neighbour pushes are skipped when the entity has no
+     * level), so the self-test can verify that a bare generator emits FE and no
+     * byproduct.
+     */
+    public boolean runGeneratorTickForSelfTest() {
+        return tickGenerator();
     }
 
     /** {@code (input * 95 + carry) / 100}; the separator's output this tick. */
@@ -1346,9 +1406,9 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         }
         if (block == MeteorosProtocol.THERMAL_GENERATOR.get()) {
             return Component.literal(String.format(Locale.ROOT,
-                    "FE %d/%d | T %d mPU | C %d mPU",
+                    "FE %d/%d | T %d mPU",
                     energy, ENERGY_CAPACITY,
-                    phases[Phase.THERMION.index()], phases[Phase.CRYON.index()]));
+                    phases[Phase.THERMION.index()]));
         }
         return Component.literal(String.format(Locale.ROOT,
                 "FE %d/%d | %d mPU", energy, ENERGY_CAPACITY, getTotal()));
@@ -1666,14 +1726,15 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
 
     /**
      * Phases this machine can actually consume or produce. The generator only
-     * touches Thermion (input) and Cryon (output), the separator handles the
-     * whole mixed buffer, and the weather blocks have no particle logic yet.
-     * Used by the shared status screen to avoid drawing irrelevant gauges.
+     * burns Thermion and (once upgraded) would produce impure Aetheron, so its
+     * gauges currently show Thermion alone; the separator handles the whole
+     * mixed buffer, and the weather blocks have no particle logic yet. Used by
+     * the shared status screen to avoid drawing irrelevant gauges.
      */
     public List<Phase> relevantPhases() {
         Block block = getBlockState().getBlock();
         if (block == MeteorosProtocol.THERMAL_GENERATOR.get()) {
-            return List.of(Phase.THERMION, Phase.CRYON);
+            return List.of(Phase.THERMION);
         }
         if (block == MeteorosProtocol.WEATHER_STATION.get() || block == MeteorosProtocol.WEATHER_TANK.get()) {
             return List.of();
@@ -1683,10 +1744,10 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
 
     /**
      * Default input whitelist: phases that external inserts may push into this
-     * machine. Only the generator is picky (it burns Thermion and produces
-     * Cryon); weather blocks accept nothing. Internal production is not routed
-     * through the filtered entry points, so a generator can still fill its own
-     * Cryon tank.
+     * machine. Only the generator is picky (it burns Thermion; its impure
+     * Aetheron byproduct needs a future upgrade); weather blocks accept nothing.
+     * Internal production is not routed through the filtered entry points, so a
+     * machine can still fill its own tanks.
      */
     public List<Phase> inputPhases() {
         Block block = getBlockState().getBlock();

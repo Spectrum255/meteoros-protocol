@@ -24,10 +24,10 @@ import java.util.Locale;
  * (enable, cycle redstone mode). No item slots are involved; only the player
  * inventory is drawn.
  *
- * <p>The phase bars follow the machine family: the generator only shows the
- * Thermion input and Cryon output, the separator shows every phase, and the
- * weather blocks (which have no particle logic yet) show no bars at all and a
- * single "no particle I/O" line instead.
+ * <p>The phase bars follow the machine family: the generator only shows its
+ * Thermion input (a bare generator has no byproduct), the separator shows every
+ * phase, and the weather blocks (which have no particle logic yet) show no bars
+ * at all and a single "no particle I/O" line instead.
  */
 public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMenu> {
     private static final int WIDTH = 176;

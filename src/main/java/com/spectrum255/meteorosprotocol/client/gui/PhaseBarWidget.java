@@ -16,16 +16,16 @@ import net.minecraft.util.Mth;
  *
  * <p>The visible bar is drawn as an inventory-slot-like well: the phase's dim
  * colour fills the cell, a sunken 1 px border sits on it, and the bright phase
- * colour rises from the bottom. The hit box spans the full 11 px step, so the
- * 1 px gaps between bars never swallow a click. Fill level, colours and
+ * colour rises from the bottom. The hit box spans the full step, so the 1 px
+ * gaps between bars never swallow a click. Bar and hit widths are passed in so
+ * the tower can fit six or more registry phases. Fill level, colours and
  * selection are live suppliers, which keeps the widget list stable while the
  * server data updates every tick.</p>
  */
 public class PhaseBarWidget extends AbstractWidget {
-    private static final int HIT_PADDING =
-            (IntakeLayout.PHASE_BAR_HIT_WIDTH - IntakeLayout.PHASE_BAR_WIDTH) / 2;
-
     private final int index;
+    private final int barWidth;
+    private final int hitPadding;
     private final DoubleSupplier fill;
     private final IntSupplier color;
     private final IntSupplier darkColor;
@@ -35,6 +35,8 @@ public class PhaseBarWidget extends AbstractWidget {
     /**
      * @param barX      left edge of the visible bar (the hit box may start earlier)
      * @param barY      top edge of the visible bar
+     * @param barWidth  visible bar width in px (see {@link IntakeLayout#phaseBarWidth(int)})
+     * @param hitWidth  click width in px (see {@link IntakeLayout#phaseBarHitWidth(int)})
      * @param index     phase index sent as button id {@code 2 + index}
      * @param fill      fill ratio in {@code [0, 1]}
      * @param color     ARGB bar colour (normally {@code phase.argb()})
@@ -42,13 +44,15 @@ public class PhaseBarWidget extends AbstractWidget {
      * @param selected  whether this phase is the current extraction target
      * @param onSelect  invoked with {@code index} when the bar is clicked
      */
-    public PhaseBarWidget(int barX, int barY, int index, DoubleSupplier fill, IntSupplier color,
-                          IntSupplier darkColor, BooleanSupplier selected, IntConsumer onSelect) {
-        super(barX - HIT_PADDING, barY - HIT_PADDING,
-                IntakeLayout.PHASE_BAR_HIT_WIDTH,
-                IntakeLayout.PHASE_BAR_HEIGHT + HIT_PADDING * 2,
+    public PhaseBarWidget(int barX, int barY, int barWidth, int hitWidth, int index,
+                          DoubleSupplier fill, IntSupplier color, IntSupplier darkColor,
+                          BooleanSupplier selected, IntConsumer onSelect) {
+        super(barX - Math.max(0, (hitWidth - barWidth) / 2), barY,
+                Math.max(1, hitWidth), IntakeLayout.PHASE_BAR_HEIGHT,
                 Component.empty());
         this.index = index;
+        this.barWidth = barWidth;
+        this.hitPadding = Math.max(0, (hitWidth - barWidth) / 2);
         this.fill = fill;
         this.color = color;
         this.darkColor = darkColor;
@@ -62,9 +66,9 @@ public class PhaseBarWidget extends AbstractWidget {
 
     @Override
     protected void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        int barX = getX() + HIT_PADDING;
-        int barY = getY() + HIT_PADDING;
-        int barW = IntakeLayout.PHASE_BAR_WIDTH;
+        int barX = getX() + this.hitPadding;
+        int barY = getY();
+        int barW = this.barWidth;
         int barH = IntakeLayout.PHASE_BAR_HEIGHT;
         float level = Mth.clamp((float) this.fill.getAsDouble(), 0.0F, 1.0F);
         MeteorosGui.phaseBarV(graphics, barX, barY, barW, barH, level,

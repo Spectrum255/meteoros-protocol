@@ -25,13 +25,15 @@ import java.util.Locale;
 
 /**
  * Intake tower screen: 176 x 180, vanilla-styled container panel with a wide
- * phase-tank frame holding six vertical tank bars, a separate mixed-buffer bar,
+ * phase-tank frame holding one vertical tank bar per registered phase (six core
+ * phases plus impure aetheron, so seven today), a separate mixed-buffer bar,
  * one FE bar, two slots and three 20 x 20 icon buttons.
  *
- * <p>The six phase bars are real {@link PhaseBarWidget}s, so selecting a phase
+ * <p>The phase bars are real {@link PhaseBarWidget}s, so selecting a phase
  * uses vanilla widget dispatch (button id {@code 2 + phase.index()}); the
- * selected bar gets a 2 px white frame. The extract button pumps the selected
- * phase into the canister in slot 1, phase tank first, mixed buffer second.</p>
+ * selected bar gets a 1 px white frame and bars narrow automatically once the
+ * registry exceeds six phases. The extract button pumps the selected phase into
+ * the canister in slot 1, phase tank first, mixed buffer second.</p>
  */
 public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
     private static final int TITLE_Y = 6;
@@ -103,12 +105,17 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
         this.sidePanel.setItemAvailable(true);
 
         this.phaseBars.clear();
-        int count = Math.min(IntakeLayout.PHASE_BAR_COUNT, Phase.all().size());
+        int count = Phase.all().size();
+        int barWidth = IntakeLayout.phaseBarWidth(count);
+        int barStep = IntakeLayout.phaseBarStep(count);
+        int hitWidth = IntakeLayout.phaseBarHitWidth(count);
         for (int i = 0; i < count; i++) {
             final int index = i;
             PhaseBarWidget bar = this.addRenderableWidget(new PhaseBarWidget(
-                    this.leftPos + IntakeLayout.PHASE_BAR_X + i * IntakeLayout.PHASE_BAR_STEP,
+                    this.leftPos + IntakeLayout.PHASE_BAR_X + i * barStep,
                     this.topPos + IntakeLayout.PHASE_BAR_Y,
+                    barWidth,
+                    hitWidth,
                     index,
                     () -> phaseFill(index),
                     () -> Phase.all().get(index).argb(),

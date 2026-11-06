@@ -56,6 +56,7 @@ public final class PhaseRegistry {
         PHASES.register("voltix_pos", () -> Phase.VOLTIX_POS);
         PHASES.register("voltix_neg", () -> Phase.VOLTIX_NEG);
         PHASES.register("aquantum", () -> Phase.AQUANTUM);
+        PHASES.register("impure_aetheron", () -> Phase.IMPURE_AETHERON);
         PHASES.makeRegistry(builder -> builder.sync(true));
     }
 

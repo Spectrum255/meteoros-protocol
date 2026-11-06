@@ -39,6 +39,8 @@
   "phase.meteorosprotocol.voltix_neg.short": "V-",
   "phase.meteorosprotocol.aquantum": "Aquantum",
   "phase.meteorosprotocol.aquantum.short": "Aq",
+  "phase.meteorosprotocol.impure_aetheron": "Impure Aetheron",
+  "phase.meteorosprotocol.impure_aetheron.short": "Ae*",
 
   "jade.meteorosprotocol.header": "Particle storage",
   "jade.meteorosprotocol.energy": "FE: %1$s / %2$s",
