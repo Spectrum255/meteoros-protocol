@@ -2,6 +2,8 @@ package com.spectrum255.meteorosprotocol.command;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.spectrum255.meteorosprotocol.compat.LightHeatParticleModifier;
+import com.spectrum255.meteorosprotocol.compat.LocalizedRainCompat;
+import com.spectrum255.meteorosprotocol.compat.TemperatureProbe;
 import com.spectrum255.meteorosprotocol.compat.WeatherAdjustedField;
 import com.spectrum255.meteorosprotocol.machine.MachineBlockEntity;
 import com.spectrum255.meteorosprotocol.particle.*;
@@ -32,6 +34,7 @@ public final class MeteorosCommands {
     private static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(Commands.literal("meteoros")
                 .then(Commands.literal("field").executes(ctx -> field(ctx.getSource())))
+                .then(Commands.literal("temp").executes(ctx -> temp(ctx.getSource())))
                 .then(Commands.literal("phases").executes(ctx -> phases(ctx.getSource())))
                 .then(Commands.literal("selftest").executes(ctx -> selftest(ctx.getSource())))
                 .then(Commands.literal("tank").executes(ctx -> tank(ctx.getSource()))));
@@ -48,9 +51,15 @@ public final class MeteorosCommands {
                 .map(key -> key.location().toString())
                 .orElse("unknown");
 
+        double ambient = TemperatureProbe.ambient(level, pos);
+        double local = TemperatureProbe.local(level, pos);
+        double deltaK = local - ambient;
+        float temperatureHeat = TemperatureProbe.heatOf(deltaK);
+
         String message = String.format(Locale.ROOT,
                 "Biome %s @Y=%d | Dth=%.3f (T=%.3f/C=%.3f) | Dch=%.3f (V+=%.3f/V-=%.3f q=%.3f)"
-                        + " | Aq=%.3f | Ae=%.3f | Dtotal=%.3f | %s",
+                        + " | Aq=%.3f | Ae=%.3f | Dtotal=%.3f | %s"
+                        + " | temp %dK (%+dK -> %+.1fT)",
                 biome, pos.getY(),
                 sample.thermalDensity(), sample.thermion(), sample.cryon(),
                 sample.chargeDensity(), sample.voltixPos(), sample.voltixNeg(), sample.chargeImbalance(),
@@ -58,15 +67,35 @@ public final class MeteorosCommands {
                 saturation.oversaturated() ? "oversaturated"
                         : saturation.lowDensity() ? "sparse"
                         : saturation.highDensity() ? "dense"
-                        : "normal");
+                        : "normal",
+                Math.round(local), Math.round(deltaK), temperatureHeat);
         source.sendSuccess(() -> Component.literal(message), false);
         source.sendSuccess(() -> Component.literal("  " + phaseSummary(sample)), false);
-        int blockLight = level.getBrightness(net.minecraft.world.level.LightLayer.BLOCK, pos);
-        int skyLight = level.getBrightness(net.minecraft.world.level.LightLayer.SKY, pos);
-        int artificial = LightHeatParticleModifier.artificialLight(level, pos);
-        float heat = LightHeatParticleModifier.heatFor(artificial);
+        int blockLight = LightHeatParticleModifier.blockLight(level, pos);
+        int skyLight = LightHeatParticleModifier.skyLight(level, pos);
+        int skyDarken = level.getSkyDarken();
+        boolean precipitating = LocalizedRainCompat.isPrecipitatingAt(level, pos);
+        int skyEffective = LightHeatParticleModifier.skyEffective(skyLight, skyDarken, precipitating);
+        float heat = LightHeatParticleModifier.heatFor(blockLight, skyEffective);
         source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
-                "  light: block %d / sky %d -> +%.1f T", blockLight, skyLight, heat)), false);
+                "  light: block %d + sky %d (darken %d) -> +%.1f T",
+                blockLight, skyLight, skyDarken, heat)), false);
+        return 1;
+    }
+
+    private static int temp(CommandSourceStack source) {
+        if (!(source.getLevel() instanceof ServerLevel level)) {
+            return 0;
+        }
+        BlockPos pos = BlockPos.containing(source.getPosition());
+        double ambient = TemperatureProbe.ambient(level, pos);
+        double local = TemperatureProbe.local(level, pos);
+        double deltaK = local - ambient;
+        float heat = TemperatureProbe.heatOf(deltaK);
+        float chill = TemperatureProbe.chillOf(deltaK);
+        source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                "Temperature @%d,%d,%d: ambient=%.1fK local=%.1fK dK=%+.1f heat=%+.1fT chill=%.1fC",
+                pos.getX(), pos.getY(), pos.getZ(), ambient, local, deltaK, heat, chill)), false);
         return 1;
     }
 

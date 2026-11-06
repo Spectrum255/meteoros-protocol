@@ -39,7 +39,8 @@ public final class WeatherAdjustedField implements ParticleField {
         FieldSample original = base.sample(level, pos);
         FieldSample weathered = WeatherParticleModifier.apply(level, pos, original).sample();
         FieldSample lit = LightHeatParticleModifier.apply(level, pos, weathered);
-        return applySamplers(level, pos, lit);
+        FieldSample tempered = TemperatureProbe.apply(level, pos, lit);
+        return applySamplers(level, pos, tempered);
     }
 
     /** Runs every registered addon-phase sampler; returns the base sample when there are none. */

@@ -2,6 +2,7 @@ package com.spectrum255.meteorosprotocol.client;
 
 import com.spectrum255.meteorosprotocol.MeteorosProtocol;
 import com.spectrum255.meteorosprotocol.compat.LightHeatParticleModifier;
+import com.spectrum255.meteorosprotocol.compat.TemperatureProbe;
 import com.spectrum255.meteorosprotocol.network.DetectorData;
 import com.spectrum255.meteorosprotocol.network.DetectorPayload;
 import com.spectrum255.meteorosprotocol.particle.FieldSample;
@@ -42,7 +43,10 @@ public final class ParticleDebugOverlay {
     private static long sampledAtTick = Long.MIN_VALUE;
     private static int cachedBlockLight;
     private static int cachedSkyLight;
+    private static int cachedSkyDarken;
     private static float cachedLightHeat;
+    private static double cachedLocalTemperature;
+    private static double cachedTemperatureDelta;
 
     private ParticleDebugOverlay() {
     }
@@ -78,7 +82,7 @@ public final class ParticleDebugOverlay {
                 sample.chargeImbalance(), sample.totalDensity()));
 
         lines.add("  sat: " + saturationRules(sample));
-        lines.add("  weather: " + weatherState());
+        lines.add("  weather: " + weatherState() + temperatureSuffix());
     }
 
     /**
@@ -111,13 +115,20 @@ public final class ParticleDebugOverlay {
     }
 
     /**
-     * Artificial light at the sampled position, appended to the phase line:
-     * {@code | light 14/0 +14.0T}. Values come from the same 20-tick cache as
-     * the field sample.
+     * Block and sky light at the sampled position, appended to the phase line:
+     * {@code | light b14 s0(d0) +14.0T}. Values come from the same 20-tick
+     * cache as the field sample. Client-side weather is not consulted, so the
+     * rain reduction only shows up in {@code /meteoros field}.
      */
     private static String lightSuffix() {
-        return String.format(Locale.ROOT, " | light %d/%d +%.1fT",
-                cachedBlockLight, cachedSkyLight, cachedLightHeat);
+        return String.format(Locale.ROOT, " | light b%d s%d(d%d) +%.1fT",
+                cachedBlockLight, cachedSkyLight, cachedSkyDarken, cachedLightHeat);
+    }
+
+    /** Local temperature and its delta, appended to the weather line. */
+    private static String temperatureSuffix() {
+        return String.format(Locale.ROOT, " | temp %dK (%+dK)",
+                Math.round(cachedLocalTemperature), Math.round(cachedTemperatureDelta));
     }
 
     /** Compact labels for the core phases; addon phases use their display name. */
@@ -152,8 +163,12 @@ public final class ParticleDebugOverlay {
             sampledAtTick = now;
             cachedBlockLight = level.getBrightness(LightLayer.BLOCK, pos);
             cachedSkyLight = level.getBrightness(LightLayer.SKY, pos);
+            cachedSkyDarken = level.getSkyDarken();
             cachedLightHeat = LightHeatParticleModifier.heatFor(
-                    Math.max(0, cachedBlockLight - cachedSkyLight));
+                    cachedBlockLight,
+                    LightHeatParticleModifier.skyEffective(cachedSkyLight, cachedSkyDarken, false));
+            cachedLocalTemperature = TemperatureProbe.local(level, pos);
+            cachedTemperatureDelta = cachedLocalTemperature - TemperatureProbe.ambient(level, pos);
         }
         return cachedSample;
     }

@@ -1,10 +1,15 @@
 package com.spectrum255.meteorosprotocol.particle;
 
+import com.spectrum255.meteorosprotocol.Config;
 import com.spectrum255.meteorosprotocol.compat.LightHeatParticleModifier;
+import com.spectrum255.meteorosprotocol.compat.TemperatureProbe;
+import com.spectrum255.meteorosprotocol.compat.TemperatureSources;
 import com.spectrum255.meteorosprotocol.machine.MachineBlockEntity;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 
 /**
  * S1 structural self-test for the v2 data model. Runs from
@@ -34,6 +39,7 @@ public final class ParticleSelfTest {
         check(failures, "height gradient", ParticleSelfTest::heightGradient);
         check(failures, "machine rates", ParticleSelfTest::machineRates);
         check(failures, "light heat", ParticleSelfTest::lightHeat);
+        check(failures, "temperature", ParticleSelfTest::temperature);
         return failures;
     }
 
@@ -362,40 +368,96 @@ public final class ParticleSelfTest {
     }
 
     /**
-     * Guards the artificial-light heat modifier: zero light is a no-op, and
-     * artificial light raises Thermion while Cryon pays for it and never goes
-     * negative. Expected values derive from the live config so a tuned server
-     * still passes.
+     * Guards the light-heat modifier: block light and effective sky light are
+     * two separate channels, the day/night reduction makes night dimmer than
+     * noon, rain dims the sky further, and Cryon pays the configured share
+     * without going negative. Expected values derive from the live config so a
+     * tuned server still passes.
      */
     private static void lightHeat() {
         FieldSample base = new FieldSample(10.0F, 10.0F, 1.0F, 1.0F, 2.0F, 3.0F);
-        FieldSample unlit = LightHeatParticleModifier.apply(base, 0);
+        FieldSample unlit = LightHeatParticleModifier.apply(base, 0, 0, 0, false);
         require(near(unlit.thermion(), 10.0F) && near(unlit.cryon(), 10.0F)
                         && near(unlit.voltixPos(), 1.0F) && near(unlit.voltixNeg(), 1.0F)
                         && near(unlit.aquantum(), 2.0F) && near(unlit.aetheron(), 3.0F),
-                "artificial light 0 must leave the sample unchanged");
+                "zero block and sky light must leave the sample unchanged");
 
-        float heat = LightHeatParticleModifier.heatFor(15);
         float share = LightHeatParticleModifier.cryonShare();
-        require(heat > 0.0F, "default config must add heat for artificial light");
+        float skyCoefficient = LightHeatParticleModifier.heatPerSky();
+        float blockCoefficient = LightHeatParticleModifier.heatPerArtificial();
 
-        FieldSample lit = LightHeatParticleModifier.apply(base, 15);
-        require(near(lit.thermion(), 10.0F + heat),
-                "15 artificial light must add heat to Thermion");
-        require(near(lit.cryon(), Math.max(0.0F, 10.0F - heat * share)),
-                "Cryon must pay the configured share of the gain");
+        float noonHeat = LightHeatParticleModifier.skyEffective(15, 0, false) * skyCoefficient;
+        FieldSample noon = LightHeatParticleModifier.apply(base, 0, 15, 0, false);
+        require(near(noon.thermion(), 10.0F + noonHeat),
+                "noon sky light must add its own heat to Thermion");
+        require(near(noon.cryon(), Math.max(0.0F, 10.0F - noonHeat * share)),
+                "Cryon must pay the configured share of the sky-light gain");
+
+        float nightHeat = LightHeatParticleModifier.skyEffective(15, 11, false) * skyCoefficient;
+        FieldSample night = LightHeatParticleModifier.apply(base, 0, 15, 11, false);
+        require(near(night.thermion(), 10.0F + nightHeat), "night heat must follow the reduced sky light");
+        require(nightHeat < noonHeat || noonHeat == 0.0F,
+                "night sky light must be clearly dimmer than noon");
+
+        float rainyHeat = LightHeatParticleModifier.skyEffective(15, 0, true) * skyCoefficient;
+        FieldSample rainy = LightHeatParticleModifier.apply(base, 0, 15, 0, true);
+        require(near(rainy.thermion(), 10.0F + rainyHeat), "rain must scale the sky-light heat");
+        require(rainyHeat < noonHeat || noonHeat == 0.0F, "rain must dim the sky-light heat below noon");
+
+        float torchHeat = 14 * blockCoefficient;
+        FieldSample torch = LightHeatParticleModifier.apply(base, 14, 0, 0, false);
+        require(near(torch.thermion(), 10.0F + torchHeat), "14 block light must add its own heat");
+        require(near(torch.cryon(), Math.max(0.0F, 10.0F - torchHeat * share)),
+                "Cryon must pay the configured share of the block-light gain");
 
         FieldSample dry = new FieldSample(0.0F, 0.0F, 2.0F, 3.0F, 4.0F, 5.0F);
-        FieldSample litDry = LightHeatParticleModifier.apply(dry, 15);
+        FieldSample litDry = LightHeatParticleModifier.apply(dry, 15, 0, 0, false);
         require(litDry.cryon() == 0.0F, "Cryon must never go negative");
-        require(near(litDry.thermion(), heat), "Thermion gain must be independent of Cryon");
+        require(near(litDry.thermion(), 15 * blockCoefficient), "Thermion gain must be independent of Cryon");
         require(near(litDry.aquantum(), 4.0F) && near(litDry.aetheron(), 5.0F)
                         && near(litDry.voltixPos(), 2.0F) && near(litDry.voltixNeg(), 3.0F),
                 "the other phases must be preserved");
     }
 
+    /**
+     * Guards the temperature model: ambient altitude falloff, heat/chill clamps,
+     * the heat-source table, and the weakened light-heat defaults.
+     */
+    private static void temperature() {
+        require(near(TemperatureProbe.ambientFor(0.8F, 64), 300.0),
+                "biome 0.8 at y=64 must be 300 K");
+        require(near(TemperatureProbe.ambientFor(0.0F, 64), 280.0),
+                "biome 0.0 at y=64 must be 280 K");
+        require(near(TemperatureProbe.ambientFor(0.8F, 192), 280.8),
+                "biome 0.8 at y=192 must be 280.8 K");
+
+        require(near(TemperatureProbe.heatOf(300.0), 15.0F), "heatOf(300) must be 15 T");
+        require(near(TemperatureProbe.heatOf(2000.0), 20.0F), "heatOf must cap at 20 T");
+        require(near(TemperatureProbe.heatOf(-200.0), -5.0F), "heatOf must floor at -5 T");
+        require(near(TemperatureProbe.chillOf(-100.0), 3.0F), "chillOf(-100) must be 3 C");
+        require(near(TemperatureProbe.chillOf(50.0), 0.0F),
+                "chillOf must stay zero when warmer than ambient");
+
+        require(near(TemperatureSources.temperatureOf(Blocks.MAGMA_BLOCK.defaultBlockState()), 1000.0F),
+                "magma blocks must read 1000 K");
+        require(near(TemperatureSources.temperatureOf(Blocks.FURNACE.defaultBlockState()
+                        .setValue(BlockStateProperties.LIT, true)), 900.0F),
+                "lit furnaces must read 900 K");
+        require(TemperatureSources.temperatureOf(Blocks.STONE.defaultBlockState()) == null,
+                "plain stone must not be a heat source");
+
+        require(near(Config.PF_LIGHT_HEAT_ARTIFICIAL.get().floatValue(), 0.30F),
+                "block-light heat default must be 0.30");
+        require(near(Config.PF_LIGHT_HEAT_SKY.get().floatValue(), 0.15F),
+                "sky-light heat default must be 0.15");
+    }
+
     private static boolean near(float actual, float expected) {
         return Math.abs(actual - expected) < 1.0E-4F;
+    }
+
+    private static boolean near(double actual, double expected) {
+        return Math.abs(actual - expected) < 1.0E-4;
     }
 
     private static long sum(long[] values) {

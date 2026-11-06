@@ -186,14 +186,50 @@ public final class Config {
         PF_DIM_END_AQUEOUS = BUILDER.defineInRange("endAqueous", 0.1, 0.0, 10.0);
         BUILDER.pop();
 
-        BUILDER.comment("Artificial light heat: block light above sky light warms the local field.")
+        BUILDER.comment("Light heat (secondary): block light and sky light add a small amount of heat;"
+                        + " temperature is the primary driver.")
                 .push("light");
-        PF_LIGHT_HEAT_PER_LEVEL = BUILDER
-                .comment("Thermion added per level of artificial light (default 1.0).")
-                .defineInRange("heatPerLevel", 1.0, 0.0, 4.0);
+        PF_LIGHT_HEAT_ARTIFICIAL = BUILDER
+                .comment("Thermion added per level of block light (default 0.3, weak bonus).")
+                .defineInRange("heatPerArtificial", 0.30, 0.0, 4.0);
+        PF_LIGHT_HEAT_SKY = BUILDER
+                .comment("Thermion added per level of effective sky light after sky darkening and rain"
+                        + " (default 0.15, weak bonus).")
+                .defineInRange("heatPerSky", 0.15, 0.0, 4.0);
         PF_LIGHT_HEAT_CRYON_SHARE = BUILDER
-                .comment("Fraction of the Thermion gain deducted from Cryon (default 0.5).")
+                .comment("Fraction of the total light-heat gain deducted from Cryon (default 0.5).")
                 .defineInRange("cryonShare", 0.5, 0.0, 1.0);
+        BUILDER.pop();
+
+        BUILDER.comment("Temperature (primary): biome temperature plus nearby heat sources/cold blocks"
+                        + " drive Thermion and Cryon.")
+                .push("temperature");
+        PF_TEMP_ENABLED = BUILDER
+                .comment("Sample local temperature and apply it to the particle field (default true).")
+                .define("enabled", true);
+        PF_TEMP_HEAT_SLOPE = BUILDER
+                .comment("Thermion added per Kelvin above ambient (default 0.05).")
+                .defineInRange("heatSlope", 0.05, 0.0, 1.0);
+        PF_TEMP_HEAT_MIN = BUILDER
+                .comment("Lowest Thermion change from a cold delta, i.e. the floor when colder than"
+                        + " ambient (default -5.0).")
+                .defineInRange("heatMin", -5.0, -50.0, 0.0);
+        PF_TEMP_HEAT_MAX = BUILDER
+                .comment("Highest Thermion gain from a hot delta (default 20.0).")
+                .defineInRange("heatMax", 20.0, 0.0, 100.0);
+        PF_TEMP_CHILL_SLOPE = BUILDER
+                .comment("Cryon added per Kelvin below ambient (default 0.03).")
+                .defineInRange("chillSlope", 0.03, 0.0, 1.0);
+        PF_TEMP_CHILL_MAX = BUILDER
+                .comment("Highest Cryon gain from a cold delta (default 8.0).")
+                .defineInRange("chillMax", 8.0, 0.0, 50.0);
+        PF_TEMP_CRYON_SHARE = BUILDER
+                .comment("Fraction of the heat gain deducted from Cryon before the chill bonus"
+                        + " (default 0.5).")
+                .defineInRange("cryonShare", 0.5, 0.0, 1.0);
+        PF_TEMP_RADIUS = BUILDER
+                .comment("Block radius scanned for heat sources and cold blocks (default 5, 1-8).")
+                .defineInRange("radius", 5, 1, 8);
         BUILDER.pop();
 
         BUILDER.pop();
@@ -267,9 +303,20 @@ public final class Config {
     public static final ModConfigSpec.DoubleValue PF_DIM_END_CHARGE;
     public static final ModConfigSpec.DoubleValue PF_DIM_END_AQUEOUS;
 
-    // Artificial light heat
-    public static final ModConfigSpec.DoubleValue PF_LIGHT_HEAT_PER_LEVEL;
+    // Light heat
+    public static final ModConfigSpec.DoubleValue PF_LIGHT_HEAT_ARTIFICIAL;
+    public static final ModConfigSpec.DoubleValue PF_LIGHT_HEAT_SKY;
     public static final ModConfigSpec.DoubleValue PF_LIGHT_HEAT_CRYON_SHARE;
+
+    // Temperature
+    public static final ModConfigSpec.BooleanValue PF_TEMP_ENABLED;
+    public static final ModConfigSpec.DoubleValue PF_TEMP_HEAT_SLOPE;
+    public static final ModConfigSpec.DoubleValue PF_TEMP_HEAT_MIN;
+    public static final ModConfigSpec.DoubleValue PF_TEMP_HEAT_MAX;
+    public static final ModConfigSpec.DoubleValue PF_TEMP_CHILL_SLOPE;
+    public static final ModConfigSpec.DoubleValue PF_TEMP_CHILL_MAX;
+    public static final ModConfigSpec.DoubleValue PF_TEMP_CRYON_SHARE;
+    public static final ModConfigSpec.IntValue PF_TEMP_RADIUS;
 
     static final ModConfigSpec SPEC = BUILDER.build();
 
