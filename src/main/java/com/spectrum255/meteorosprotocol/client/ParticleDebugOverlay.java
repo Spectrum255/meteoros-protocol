@@ -1,6 +1,7 @@
 package com.spectrum255.meteorosprotocol.client;
 
 import com.spectrum255.meteorosprotocol.MeteorosProtocol;
+import com.spectrum255.meteorosprotocol.compat.LightHeatParticleModifier;
 import com.spectrum255.meteorosprotocol.network.DetectorData;
 import com.spectrum255.meteorosprotocol.network.DetectorPayload;
 import com.spectrum255.meteorosprotocol.particle.FieldSample;
@@ -15,6 +16,7 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.LightLayer;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -38,6 +40,9 @@ public final class ParticleDebugOverlay {
     private static ResourceKey<Level> cachedDimension;
     private static BlockPos cachedPos;
     private static long sampledAtTick = Long.MIN_VALUE;
+    private static int cachedBlockLight;
+    private static int cachedSkyLight;
+    private static float cachedLightHeat;
 
     private ParticleDebugOverlay() {
     }
@@ -62,7 +67,7 @@ public final class ParticleDebugOverlay {
                         .map(key -> key.location().toString())
                         .orElse("unknown")));
 
-        lines.add(phaseValues(sample));
+        lines.add(phaseValues(sample) + lightSuffix());
         lines.add(String.format(Locale.ROOT, "  phases: %d core / %d total",
                 Phase.corePhases().size(), Phase.all().size()));
 
@@ -105,6 +110,16 @@ public final class ParticleDebugOverlay {
         return text.toString();
     }
 
+    /**
+     * Artificial light at the sampled position, appended to the phase line:
+     * {@code | light 14/0 +14.0T}. Values come from the same 20-tick cache as
+     * the field sample.
+     */
+    private static String lightSuffix() {
+        return String.format(Locale.ROOT, " | light %d/%d +%.1fT",
+                cachedBlockLight, cachedSkyLight, cachedLightHeat);
+    }
+
     /** Compact labels for the core phases; addon phases use their display name. */
     private static String shortLabel(Phase phase) {
         return switch (phase.key().getPath()) {
@@ -135,6 +150,10 @@ public final class ParticleDebugOverlay {
             cachedDimension = level.dimension();
             cachedPos = pos.immutable();
             sampledAtTick = now;
+            cachedBlockLight = level.getBrightness(LightLayer.BLOCK, pos);
+            cachedSkyLight = level.getBrightness(LightLayer.SKY, pos);
+            cachedLightHeat = LightHeatParticleModifier.heatFor(
+                    Math.max(0, cachedBlockLight - cachedSkyLight));
         }
         return cachedSample;
     }

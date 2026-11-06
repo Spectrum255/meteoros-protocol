@@ -186,6 +186,16 @@ public final class Config {
         PF_DIM_END_AQUEOUS = BUILDER.defineInRange("endAqueous", 0.1, 0.0, 10.0);
         BUILDER.pop();
 
+        BUILDER.comment("Artificial light heat: block light above sky light warms the local field.")
+                .push("light");
+        PF_LIGHT_HEAT_PER_LEVEL = BUILDER
+                .comment("Thermion added per level of artificial light (default 1.0).")
+                .defineInRange("heatPerLevel", 1.0, 0.0, 4.0);
+        PF_LIGHT_HEAT_CRYON_SHARE = BUILDER
+                .comment("Fraction of the Thermion gain deducted from Cryon (default 0.5).")
+                .defineInRange("cryonShare", 0.5, 0.0, 1.0);
+        BUILDER.pop();
+
         BUILDER.pop();
     }
 
@@ -256,6 +266,10 @@ public final class Config {
     public static final ModConfigSpec.DoubleValue PF_DIM_END_THERMAL;
     public static final ModConfigSpec.DoubleValue PF_DIM_END_CHARGE;
     public static final ModConfigSpec.DoubleValue PF_DIM_END_AQUEOUS;
+
+    // Artificial light heat
+    public static final ModConfigSpec.DoubleValue PF_LIGHT_HEAT_PER_LEVEL;
+    public static final ModConfigSpec.DoubleValue PF_LIGHT_HEAT_CRYON_SHARE;
 
     static final ModConfigSpec SPEC = BUILDER.build();
 

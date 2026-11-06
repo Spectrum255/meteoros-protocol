@@ -1,5 +1,6 @@
 package com.spectrum255.meteorosprotocol.particle;
 
+import com.spectrum255.meteorosprotocol.compat.LightHeatParticleModifier;
 import com.spectrum255.meteorosprotocol.machine.MachineBlockEntity;
 import java.util.ArrayList;
 import java.util.List;
@@ -32,6 +33,7 @@ public final class ParticleSelfTest {
         check(failures, "biome magnitudes", ParticleSelfTest::biomeMagnitudes);
         check(failures, "height gradient", ParticleSelfTest::heightGradient);
         check(failures, "machine rates", ParticleSelfTest::machineRates);
+        check(failures, "light heat", ParticleSelfTest::lightHeat);
         return failures;
     }
 
@@ -357,6 +359,39 @@ public final class ParticleSelfTest {
         phaseAmounts[Phase.AQUANTUM.index()] = tank.tankCapacity() - 1L;
         require(MachineBlockEntity.separatorFits(plan, phaseAmounts),
                 "separator precheck must accept one free mPU");
+    }
+
+    /**
+     * Guards the artificial-light heat modifier: zero light is a no-op, and
+     * artificial light raises Thermion while Cryon pays for it and never goes
+     * negative. Expected values derive from the live config so a tuned server
+     * still passes.
+     */
+    private static void lightHeat() {
+        FieldSample base = new FieldSample(10.0F, 10.0F, 1.0F, 1.0F, 2.0F, 3.0F);
+        FieldSample unlit = LightHeatParticleModifier.apply(base, 0);
+        require(near(unlit.thermion(), 10.0F) && near(unlit.cryon(), 10.0F)
+                        && near(unlit.voltixPos(), 1.0F) && near(unlit.voltixNeg(), 1.0F)
+                        && near(unlit.aquantum(), 2.0F) && near(unlit.aetheron(), 3.0F),
+                "artificial light 0 must leave the sample unchanged");
+
+        float heat = LightHeatParticleModifier.heatFor(15);
+        float share = LightHeatParticleModifier.cryonShare();
+        require(heat > 0.0F, "default config must add heat for artificial light");
+
+        FieldSample lit = LightHeatParticleModifier.apply(base, 15);
+        require(near(lit.thermion(), 10.0F + heat),
+                "15 artificial light must add heat to Thermion");
+        require(near(lit.cryon(), Math.max(0.0F, 10.0F - heat * share)),
+                "Cryon must pay the configured share of the gain");
+
+        FieldSample dry = new FieldSample(0.0F, 0.0F, 2.0F, 3.0F, 4.0F, 5.0F);
+        FieldSample litDry = LightHeatParticleModifier.apply(dry, 15);
+        require(litDry.cryon() == 0.0F, "Cryon must never go negative");
+        require(near(litDry.thermion(), heat), "Thermion gain must be independent of Cryon");
+        require(near(litDry.aquantum(), 4.0F) && near(litDry.aetheron(), 5.0F)
+                        && near(litDry.voltixPos(), 2.0F) && near(litDry.voltixNeg(), 3.0F),
+                "the other phases must be preserved");
     }
 
     private static boolean near(float actual, float expected) {

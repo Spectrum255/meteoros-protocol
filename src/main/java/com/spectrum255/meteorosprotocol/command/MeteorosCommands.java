@@ -1,6 +1,7 @@
 package com.spectrum255.meteorosprotocol.command;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.spectrum255.meteorosprotocol.compat.LightHeatParticleModifier;
 import com.spectrum255.meteorosprotocol.compat.WeatherAdjustedField;
 import com.spectrum255.meteorosprotocol.machine.MachineBlockEntity;
 import com.spectrum255.meteorosprotocol.particle.*;
@@ -60,6 +61,12 @@ public final class MeteorosCommands {
                         : "normal");
         source.sendSuccess(() -> Component.literal(message), false);
         source.sendSuccess(() -> Component.literal("  " + phaseSummary(sample)), false);
+        int blockLight = level.getBrightness(net.minecraft.world.level.LightLayer.BLOCK, pos);
+        int skyLight = level.getBrightness(net.minecraft.world.level.LightLayer.SKY, pos);
+        int artificial = LightHeatParticleModifier.artificialLight(level, pos);
+        float heat = LightHeatParticleModifier.heatFor(artificial);
+        source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                "  light: block %d / sky %d -> +%.1f T", blockLight, skyLight, heat)), false);
         return 1;
     }
 
