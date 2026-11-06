@@ -588,6 +588,23 @@ public final class ParticleSelfTest {
         generator.loadAdditional(legacyTag, RegistryAccess.EMPTY);
         require(generator.autoIo(), "saves without AutoIo must default to true");
 
+        // Button ids must stay clear of the per-phase selection range: adding the
+        // seventh phase shifted the extract id from 8 to 9, so the old hard-coded
+        // screen ids silently selected a phase instead. Check the formula for
+        // both the historical six-phase registry and the current one.
+        for (int phaseCount : new int[]{6, 7}) {
+            int extractId = 2 + phaseCount;
+            int autoIoId = extractId + 1;
+            require(!(extractId >= 2 && extractId < 2 + phaseCount),
+                    "the extract button id must not overlap the phase selection range");
+            require(autoIoId == extractId + 1,
+                    "the auto-I/O button id must directly follow the extract id");
+            require(autoIoId != extractId,
+                    "the extract and auto-I/O button ids must differ");
+            require(autoIoId != 0 && autoIoId != 1,
+                    "machine button ids must not collide with power or redstone");
+        }
+
         // Default input whitelist: only the generator is picky. Internal
         // production writes must bypass the filtered entry points.
         require(generator.inputPhases().equals(List.of(Phase.THERMION)),

@@ -95,13 +95,14 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
                 ICON_BUTTON_SIZE, ICON_BUTTON_SIZE, this::redstoneIcon, this::redstoneTooltip,
                 button -> sendButton(1)));
         this.extractButton = this.addRenderableWidget(new IconButton(buttonX, this.topPos + ICON_EXTRACT_Y,
-                ICON_BUTTON_SIZE, ICON_BUTTON_SIZE, ICON_EXTRACT, this::extractTooltip, button -> sendButton(8)));
+                ICON_BUTTON_SIZE, ICON_BUTTON_SIZE, ICON_EXTRACT, this::extractTooltip,
+                button -> sendButton(this.menu.extractButtonId())));
         this.sideButton = this.addRenderableWidget(new IconButton(this.leftPos + SIDE_BUTTON_X,
                 this.topPos + SIDE_BUTTON_Y, ICON_BUTTON_SIZE, ICON_BUTTON_SIZE, ICON_SIDE,
                 this::sideTooltip, button -> this.sidePanel.toggle()));
         this.autoIoButton = this.addRenderableWidget(new IconButton(this.leftPos + AUTOIO_BUTTON_X,
                 this.topPos + AUTOIO_BUTTON_Y, ICON_BUTTON_SIZE, ICON_BUTTON_SIZE, this::autoIoIcon,
-                this::autoIoTooltip, button -> sendButton(9)));
+                this::autoIoTooltip, button -> sendButton(this.menu.autoIoButtonId())));
         this.sidePanel.setItemAvailable(true);
 
         this.phaseBars.clear();

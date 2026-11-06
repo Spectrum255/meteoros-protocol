@@ -265,6 +265,14 @@ public class MachineStatusMenu extends AbstractContainerMenu {
         return data(autoIoIndex) != 0;
     }
 
+    /**
+     * Button id for the auto-I/O toggle. Derived from the live phase count so a
+     * future "extract" button can take {@code 2 + phaseCount} without colliding.
+     */
+    public int autoIoButtonId() {
+        return 2 + Phase.all().size() + 1;
+    }
+
     /** Unified accessor: one mask per {@link SideChannel}, in channel order. */
     public int sideMask(SideChannel channel) {
         return switch (channel) {
@@ -295,10 +303,14 @@ public class MachineStatusMenu extends AbstractContainerMenu {
             this.broadcastChanges();
             return true;
         }
+        if (id == autoIoButtonId()) {
+            machine.setAutoIo(!machine.autoIo());
+            this.broadcastChanges();
+            return true;
+        }
         switch (id) {
             case 0 -> machine.setEnabled(!machine.isEnabled());
             case 1 -> machine.cycleRedstoneMode();
-            case 9 -> machine.setAutoIo(!machine.autoIo());
             default -> {
                 return false;
             }

@@ -240,6 +240,21 @@ public class IntakeMenu extends AbstractContainerMenu {
         return data(autoIoIndex) != 0;
     }
 
+    /**
+     * Button id for the "extract into canister" action. It follows the phase
+     * selection ids, so it must be derived from the registry size: with seven
+     * phases the selection uses 2..8 and extraction is 9. Hard-coding 8/9 in the
+     * screen made the extraction button select the last phase instead.
+     */
+    public int extractButtonId() {
+        return 2 + phaseCount;
+    }
+
+    /** Button id for the auto-I/O toggle, directly after the extraction id. */
+    public int autoIoButtonId() {
+        return 2 + phaseCount + 1;
+    }
+
     /** Unified accessor: one mask per {@link SideChannel}, in channel order. */
     public int sideMask(SideChannel channel) {
         return switch (channel) {
@@ -275,15 +290,19 @@ public class IntakeMenu extends AbstractContainerMenu {
             this.broadcastChanges();
             return true;
         }
-        if (id == 2 + phaseCount) {
+        if (id == extractButtonId()) {
             machine.fillCanister(machine.canisterPhase());
+            this.broadcastChanges();
+            return true;
+        }
+        if (id == autoIoButtonId()) {
+            machine.setAutoIo(!machine.autoIo());
             this.broadcastChanges();
             return true;
         }
         switch (id) {
             case 0 -> machine.setEnabled(!machine.isEnabled());
             case 1 -> machine.cycleRedstoneMode();
-            case 9 -> machine.setAutoIo(!machine.autoIo());
             default -> {
                 return false;
             }

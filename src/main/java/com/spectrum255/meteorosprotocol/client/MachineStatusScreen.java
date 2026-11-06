@@ -122,7 +122,7 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
                 this::sideTooltip, button -> this.sidePanel.toggle()));
         this.autoIoButton = this.addRenderableWidget(new IconButton(this.leftPos + AUTOIO_BUTTON_X,
                 this.topPos + AUTOIO_BUTTON_Y, BUTTON_SIZE, BUTTON_SIZE, this::autoIoIcon,
-                this::autoIoTooltip, button -> sendButton(9)));
+                this::autoIoTooltip, button -> sendButton(this.menu.autoIoButtonId())));
         // Only the intake tower has item slots; this screen never shows them.
         this.sidePanel.setItemAvailable(false);
     }
