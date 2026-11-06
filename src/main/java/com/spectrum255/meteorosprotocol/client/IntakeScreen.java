@@ -4,7 +4,7 @@ import com.spectrum255.meteorosprotocol.MeteorosProtocol;
 import com.spectrum255.meteorosprotocol.client.gui.IconButton;
 import com.spectrum255.meteorosprotocol.client.gui.IntakeLayout;
 import com.spectrum255.meteorosprotocol.client.gui.MeteorosGui;
-import com.spectrum255.meteorosprotocol.client.gui.PhaseBarWidget;
+import com.spectrum255.meteorosprotocol.client.gui.PhaseRowWidget;
 import com.spectrum255.meteorosprotocol.client.gui.SideConfigPanel;
 import com.spectrum255.meteorosprotocol.item.InfiniteParticleCanisterItem;
 import com.spectrum255.meteorosprotocol.machine.MachineBlockEntity;
@@ -25,15 +25,15 @@ import java.util.List;
 
 /**
  * Intake tower screen: 176 x 180, vanilla-styled container panel with a wide
- * phase-tank frame holding one vertical tank bar per registered phase (six core
+ * phase list holding one scrolling horizontal row per registered phase (six core
  * phases plus impure aetheron, so seven today), a separate mixed-buffer bar,
  * one FE bar, two slots and three 20 x 20 icon buttons.
  *
- * <p>The phase bars are real {@link PhaseBarWidget}s, so selecting a phase
- * uses vanilla widget dispatch (button id {@code 2 + phase.index()}); the
- * selected bar gets a 1 px white frame and bars narrow automatically once the
- * registry exceeds six phases. The extract button pumps the selected phase into
- * the canister in slot 1, phase tank first, mixed buffer second.</p>
+ * <p>The phase rows are real {@link PhaseRowWidget}s, so selecting a phase uses
+ * vanilla widget dispatch (button id {@code 2 + phase.index()}); four rows are
+ * visible at once and the mouse wheel scrolls the rest. The selected row gets a
+ * 1 px white frame. The extract button pumps the selected phase into the
+ * canister in slot 1, phase tank first, mixed buffer second.</p>
  */
 public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
     private static final int TITLE_Y = 6;
@@ -67,7 +67,9 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
     private static final int AUTOIO_BUTTON_X = 132;
     private static final int AUTOIO_BUTTON_Y = 4;
 
-    private final List<PhaseBarWidget> phaseBars = new ArrayList<>();
+    private final List<PhaseRowWidget> phaseRows = new ArrayList<>();
+    /** First visible phase row; clamped to {@code [0, size - 4]}. */
+    private int phaseScroll;
     private final SideConfigPanel sidePanel = new SideConfigPanel();
     private IconButton toggleButton;
     private IconButton redstoneButton;
@@ -105,26 +107,27 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
                 this::autoIoTooltip, button -> sendButton(this.menu.autoIoButtonId())));
         this.sidePanel.setItemAvailable(true);
 
-        this.phaseBars.clear();
+        this.phaseRows.clear();
+        this.phaseScroll = 0;
         int count = Phase.all().size();
-        int barWidth = IntakeLayout.phaseBarWidth(count);
-        int barStep = IntakeLayout.phaseBarStep(count);
-        int hitWidth = IntakeLayout.phaseBarHitWidth(count);
+        int rowX = this.leftPos + IntakeLayout.PHASE_ROW_X;
         for (int i = 0; i < count; i++) {
             final int index = i;
-            PhaseBarWidget bar = this.addRenderableWidget(new PhaseBarWidget(
-                    this.leftPos + IntakeLayout.PHASE_BAR_X + i * barStep,
-                    this.topPos + IntakeLayout.PHASE_BAR_Y,
-                    barWidth,
-                    hitWidth,
+            PhaseRowWidget row = this.addRenderableWidget(new PhaseRowWidget(
+                    rowX,
+                    this.topPos + IntakeLayout.PHASE_ROW_Y,
+                    IntakeLayout.PHASE_ROW_WIDTH,
+                    IntakeLayout.PHASE_ROW_HEIGHT,
                     index,
                     () -> phaseFill(index),
                     () -> Phase.all().get(index).argb(),
                     () -> Phase.all().get(index).darkArgb(),
+                    () -> phaseRowText(index),
                     () -> this.menu.canisterPhaseIndex() == index,
                     id -> sendButton(2 + id)));
-            this.phaseBars.add(bar);
+            this.phaseRows.add(row);
         }
+        updateRowLayout();
 
         updateWidgets();
     }
@@ -151,6 +154,43 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
         return (float) ((double) this.menu.phaseAmount(index) / (double) capacity);
     }
 
+    /** Row label: short phase name plus the tank amount, e.g. {@code "T 12.3 kPU"}. */
+    private Component phaseRowText(int index) {
+        Phase phase = Phase.all().get(index);
+        return Component.literal(phase.shortName().getString() + " "
+                + ParticleFormat.formatMPU(this.menu.phaseAmount(index)));
+    }
+
+    /** Positions the row widgets for the current scroll offset and hides rows outside the window. */
+    private void updateRowLayout() {
+        int total = this.phaseRows.size();
+        int maxScroll = Math.max(0, total - IntakeLayout.PHASE_ROW_VISIBLE);
+        this.phaseScroll = Mth.clamp(this.phaseScroll, 0, maxScroll);
+        for (int i = 0; i < total; i++) {
+            PhaseRowWidget row = this.phaseRows.get(i);
+            int slot = i - this.phaseScroll;
+            row.visible = slot >= 0 && slot < IntakeLayout.PHASE_ROW_VISIBLE;
+            row.setY(this.topPos + IntakeLayout.PHASE_ROW_Y + slot * IntakeLayout.PHASE_ROW_STEP);
+        }
+    }
+
+    /** 2 px wheel-only scrollbar; drawn in the background so it never blocks the rows. */
+    private void drawPhaseScrollbar(GuiGraphics graphics, int x, int y) {
+        int total = this.phaseRows.size();
+        if (total <= IntakeLayout.PHASE_ROW_VISIBLE) {
+            return;
+        }
+        int barX = x + IntakeLayout.PHASE_SCROLLBAR_X;
+        int barY = y + IntakeLayout.PHASE_SCROLLBAR_Y;
+        int barWidth = IntakeLayout.PHASE_SCROLLBAR_WIDTH;
+        int barHeight = IntakeLayout.PHASE_SCROLLBAR_HEIGHT;
+        graphics.fill(barX, barY, barX + barWidth, barY + barHeight, MeteorosGui.SLOT_DARK);
+        int thumbHeight = Math.max(6, barHeight * IntakeLayout.PHASE_ROW_VISIBLE / total);
+        int maxScroll = total - IntakeLayout.PHASE_ROW_VISIBLE;
+        int thumbY = barY + (int) Math.round((double) (barHeight - thumbHeight) * this.phaseScroll / maxScroll);
+        graphics.fill(barX, thumbY, barX + barWidth, thumbY + thumbHeight, MeteorosGui.SLOT_BODY);
+    }
+
     @Override
     protected void renderBg(GuiGraphics graphics, float partialTick, int mouseX, int mouseY) {
         int x = this.leftPos;
@@ -161,6 +201,8 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
                 IntakeLayout.MIXED_BAR_WIDTH, IntakeLayout.MIXED_BAR_HEIGHT,
                 (float) ((double) this.menu.mixedTotal() / (double) MachineBlockEntity.MIXED_CAPACITY),
                 MIXED_COLOR, 0xFF555555);
+
+        drawPhaseScrollbar(graphics, x, y);
 
         MeteorosGui.barHWithText(graphics, this.font, x + IntakeLayout.FE_X, y + IntakeLayout.FE_Y,
                 IntakeLayout.FE_WIDTH, IntakeLayout.FE_HEIGHT,
@@ -304,6 +346,22 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
         if (this.sidePanel.visible()) {
             return true;
         }
+        if (inside(mouseX, mouseY, this.leftPos + IntakeLayout.PHASE_ROW_X,
+                this.topPos + IntakeLayout.PHASE_ROW_Y,
+                IntakeLayout.PHASE_ROW_WIDTH + IntakeLayout.PHASE_SCROLLBAR_WIDTH + 2,
+                IntakeLayout.PHASE_ROW_WINDOW_HEIGHT)) {
+            int total = this.phaseRows.size();
+            int maxScroll = Math.max(0, total - IntakeLayout.PHASE_ROW_VISIBLE);
+            if (maxScroll > 0) {
+                int direction = scrollY > 0.0D ? -1 : 1;
+                int next = Mth.clamp(this.phaseScroll + direction, 0, maxScroll);
+                if (next != this.phaseScroll) {
+                    this.phaseScroll = next;
+                    updateRowLayout();
+                }
+                return true;
+            }
+        }
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
     }
 
@@ -321,9 +379,9 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
         if (this.hoveredSlot != null && this.hoveredSlot.hasItem()) {
             return;
         }
-        for (PhaseBarWidget bar : this.phaseBars) {
-            if (bar.isHovered()) {
-                drawPhaseTooltip(graphics, bar.index(), mouseX, mouseY);
+        for (PhaseRowWidget row : this.phaseRows) {
+            if (row.visible && row.isHovered()) {
+                drawPhaseTooltip(graphics, row.index(), mouseX, mouseY);
                 return;
             }
         }

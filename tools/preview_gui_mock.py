@@ -25,9 +25,12 @@ W, H = 176, 180
 
 # --- layout constants, mirrored from IntakeLayout.java ----------------------
 TITLE_Y = 6
-PHASE_X, PHASE_Y, PHASE_W, PHASE_H, PHASE_STEP = 7, 19, 10, 40, 11
+PHASE_ROW_X, PHASE_ROW_Y, PHASE_ROW_W, PHASE_ROW_H = 8, 19, 62, 10
+PHASE_ROW_STEP = 11
+PHASE_ROW_VISIBLE = 4
+SCROLLBAR = (71, 19, 2, 44)
 MIXED = (8, 63, 60, 6)
-FE = (8, 72, 60, 6)
+FE = (8, 72, 96, 8)
 SLOT_FILTER = (76, 20)
 SLOT_LOAD = (76, 44)
 BUTTONS = [(112, 18), (112, 40), (112, 62)]
@@ -119,6 +122,33 @@ def phase_bar_h(base: Image.Image, x: int, y: int, w: int, h: int,
     fill(base, x + w - 1, y, x + w, y + h, SLOT_LIGHT)
 
 
+def phase_row(base: Image.Image, x: int, y: int, w: int, h: int,
+              level: float, color, selected: bool = False) -> None:
+    """Mirror of PhaseRowWidget: dark interior, hollow edge, left-to-right fill."""
+    fill(base, x, y, x + w, y + h, dark(color))
+    inner_w = w - 2
+    filled = round(max(0.0, min(1.0, level)) * inner_w)
+    if filled > 0:
+        fill(base, x + 1, y + 1, x + 1 + filled, y + h - 1, color)
+    edge = SLOT_LIGHT if selected else None
+    fill(base, x, y, x + w, y + 1, edge or SLOT_DARK)
+    fill(base, x, y, x + 1, y + h, edge or SLOT_DARK)
+    fill(base, x, y + h - 1, x + w, y + h, edge or SLOT_LIGHT)
+    fill(base, x + w - 1, y, x + w, y + h, edge or SLOT_LIGHT)
+
+
+def scrollbar(base: Image.Image, x: int, y: int, w: int, h: int,
+              visible: int, total: int, offset: int) -> None:
+    fill(base, x, y, x + w, y + h, SLOT_DARK)
+    if total <= visible or total <= 0:
+        fill(base, x, y, x + w, y + h, SLOT_BODY)
+        return
+    thumb = max(6, h * visible // total)
+    span = h - thumb
+    pos = y + (span * offset) // (total - visible)
+    fill(base, x, pos, x + w, pos + thumb, SLOT_BODY)
+
+
 def frame_bar(base: Image.Image, x: int, y: int, w: int, h: int, level: float, color) -> None:
     """Mirror of MeteorosGui.barH (frame + track + fill)."""
     fill(base, x, y, x + w, y + h, SLOT_DARK)
@@ -140,11 +170,14 @@ def main() -> None:
     base = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     panel(base, 0, 0, W, H)
 
-    # six phase bars: different fills so the hollow look is readable
-    levels = [0.62, 0.41, 0.27, 0.14, 0.06, 0.0]
-    for i, (color, level) in enumerate(zip(PHASE_COLORS, levels)):
-        phase_bar(base, PHASE_X + i * PHASE_STEP, PHASE_Y, PHASE_W, PHASE_H,
-                  level, color, selected=(i == 0))
+    # seven phase rows (4 visible) + scrollbar, mirroring PhaseRowWidget
+    row_levels = [0.62, 0.41, 0.27, 0.14]
+    row_names = ["Ae", "T", "C", "V+"]
+    for i, (color, level) in enumerate(zip(PHASE_COLORS, row_levels)):
+        phase_row(base, PHASE_ROW_X, PHASE_ROW_Y + i * PHASE_ROW_STEP,
+                  PHASE_ROW_W, PHASE_ROW_H, level, color, selected=(i == 0))
+    scrollbar(base, SCROLLBAR[0], SCROLLBAR[1], SCROLLBAR[2], SCROLLBAR[3],
+              PHASE_ROW_VISIBLE, 7, 0)
 
     # mixed buffer: grey fill on a darker empty part
     mx, my, mw, mh = MIXED
@@ -163,10 +196,12 @@ def main() -> None:
     for col in range(9):
         slot(base, INV[0] + col * INV_STEP, HOTBAR_Y)
 
-    # three icon buttons
+    # three icon buttons + top-right autoio / side-config toggles
     for (bx, by), icon in zip(BUTTONS,
                               ["icon_power.png", "icon_redstone_always.png", "icon_extract.png"]):
         icon_button(base, bx, by, icon)
+    icon_button(base, 132, 4, "icon_autoio.png")
+    icon_button(base, 152, 4, "icon_side.png")
 
     # --- 4x upscale + text -------------------------------------------------
     big = base.resize((W * SCALE, H * SCALE), Image.NEAREST)
@@ -186,14 +221,21 @@ def main() -> None:
 
     draw.text((INV_LABEL[0] * SCALE, INV_LABEL[1] * SCALE), "玩家背包", font=ui_font, fill=TITLE_COLOR)
 
+    row_font = ImageFont.truetype(os.path.join(font_dir, "msyh.ttc"), 6 * SCALE)
+    for i, lab in enumerate(row_names):
+        tx = (PHASE_ROW_X + 3) * SCALE
+        ty = (PHASE_ROW_Y + i * PHASE_ROW_STEP) * SCALE + 3
+        draw.text((tx + 1, ty + 1), lab, font=row_font, fill=(0, 0, 0, 255))
+        draw.text((tx, ty), lab, font=row_font, fill=(255, 255, 255, 255))
+
     draw.text((12, H * SCALE + 12),
               "mock only · 176x180 @4x · 全部用 MeteorosGui 的 fill 原语重建，不贴图",
               font=label_font, fill=(210, 214, 220, 255))
     draw.text((12, H * SCALE + 40),
-              "相条：10x40、步长 11、暗色内腔 + 1px 镂空边；第 1 根白框=选中",
+              "相条：横排 62x10、步长 11、可见 4 行 + 右侧滚动条；第 1 行白框=选中",
               font=label_font, fill=(160, 166, 176, 255))
     draw.text((12, H * SCALE + 64),
-              "混合条：灰 #8B8B8B 填充 / #555555 空余；FE 条仍是红条带框",
+              "混合条：灰 #8B8B8B 填充 / #555555 空余；FE 条 96x8 红条带框",
               font=label_font, fill=(160, 166, 176, 255))
 
     canvas.convert("RGB").save(OUT)

@@ -33,6 +33,26 @@ public final class IntakeLayout {
     private static final int PHASE_BAR_SPAN = 65;
 
     /**
+     * Scrolling horizontal phase rows (the intake tower's phase list). Four
+     * 62 x 10 rows fit between y = 19 and y = 62; a 2 px scrollbar sits at
+     * x = 71 and the wheel scrolls one row at a time. The old {@code PHASE_BAR_*}
+     * constants stay above because other screens may still draw vertical bars.
+     */
+    public static final int PHASE_ROW_X = 8;
+    public static final int PHASE_ROW_Y = 19;
+    public static final int PHASE_ROW_WIDTH = 62;
+    public static final int PHASE_ROW_HEIGHT = 10;
+    public static final int PHASE_ROW_STEP = 11;
+    /** Four rows are visible at once; the rest are reached by scrolling. */
+    public static final int PHASE_ROW_VISIBLE = 4;
+    /** Height of the four-row window: three full steps plus the last row (43 px). */
+    public static final int PHASE_ROW_WINDOW_HEIGHT = PHASE_ROW_VISIBLE * PHASE_ROW_STEP - 1;
+    public static final int PHASE_SCROLLBAR_X = 71;
+    public static final int PHASE_SCROLLBAR_Y = 19;
+    public static final int PHASE_SCROLLBAR_WIDTH = 2;
+    public static final int PHASE_SCROLLBAR_HEIGHT = 44;
+
+    /**
      * Visible bar width for {@code count} phases. Six phases keep 10 px; seven or
      * more shrink so the whole row fits the 65 px band with 1 px gaps (seven ->
      * 8 px, step 9: 7 * 8 + 6 * 1 = 62).
