@@ -54,19 +54,32 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
 
     public static final long GENERATOR_INPUT_MPU_PER_TICK = 25L;
     public static final long GENERATOR_OUTPUT_MPU_PER_TICK = 25L;
-    public static final long GENERATOR_FE_PER_TICK = 50L;
+    /**
+     * 20 FE per mPU burned. A single intake tower captures 25 mPU/t, so one
+     * generator fed by one tower powers roughly twenty 25 FE/t machines.
+     */
+    public static final long GENERATOR_FE_PER_TICK = 500L;
     /** How long the generator's "active" back texture stays on after a successful tick. */
     private static final int GENERATOR_ACTIVE_HOLD_TICKS = 40;
 
-    /** Mixed pipe transfer budget per active pipe tick (every 5 ticks). */
-    public static final long PIPE_MPU_PER_TRANSFER = 20L;
+    /**
+     * Mixed pipe transfer budget per active pipe tick (every 5 ticks):
+     * 500 / 5 t = 100 mPU/t, four times a tower's capture rate.
+     */
+    public static final long PIPE_MPU_PER_TRANSFER = 500L;
+    /**
+     * Per-phase pipe budget per active pipe tick: 100 / 5 t = 20 mPU/t for each
+     * of the six phases (120 mPU/t when every phase is moving).
+     */
+    public static final long PIPE_PHASE_MPU_PER_TRANSFER = 100L;
     private static final long PIPE_INTERVAL = 5L;
 
     /** Shared total capacity of the mixed buffer (1,000 PU). */
     public static final long MIXED_CAPACITY = 1_000_000L;
     /** Independent capacity of each phase tank (8,000 PU). */
     public static final long PHASE_CAPACITY = 8_000_000L;
-    private static final long ENERGY_CAPACITY = 100_000L;
+    /** Internal FE buffer: 2,000 generator ticks (1.7 min) of headroom. */
+    public static final long ENERGY_CAPACITY = 1_000_000L;
 
     private final long[] mixed = new long[Phase.all().size()];
     private final long[] phases = new long[Phase.all().size()];
@@ -490,12 +503,12 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
     }
 
     /**
-     * Moves up to {@code PIPE_MPU_PER_TRANSFER / 4} mPU of each phase into
+     * Moves up to {@code PIPE_PHASE_MPU_PER_TRANSFER} mPU of each phase into
      * {@code target}. Returns the total amount accepted by the destination;
      * anything it could not take is put back into its own tank.
      */
     private long pushPhaseContents(PhaseStorage target) {
-        long perPhase = Math.max(1L, PIPE_MPU_PER_TRANSFER / 4L);
+        long perPhase = Math.max(1L, PIPE_PHASE_MPU_PER_TRANSFER);
         long moved = 0L;
         for (Phase phase : Phase.all()) {
             long budget = Math.min(perPhase, phaseStorage.getAmount(phase));
@@ -518,7 +531,7 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
      * not fit.
      */
     private long pullPhaseContents(PhaseStorage source) {
-        long perPhase = Math.max(1L, PIPE_MPU_PER_TRANSFER / 4L);
+        long perPhase = Math.max(1L, PIPE_PHASE_MPU_PER_TRANSFER);
         long moved = 0L;
         for (Phase phase : Phase.all()) {
             long budget = Math.min(perPhase, source.getAmount(phase));

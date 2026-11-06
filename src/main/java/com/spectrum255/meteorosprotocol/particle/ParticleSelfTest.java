@@ -316,8 +316,26 @@ public final class ParticleSelfTest {
                 "generator must consume 25 mPU T/t");
         require(MachineBlockEntity.GENERATOR_OUTPUT_MPU_PER_TICK == 25L,
                 "generator must produce 25 mPU C/t");
-        require(MachineBlockEntity.GENERATOR_FE_PER_TICK == 50L,
-                "generator must produce 50 FE/t");
+        require(MachineBlockEntity.GENERATOR_FE_PER_TICK == 500L,
+                "generator must produce 500 FE/t (20 FE per mPU)");
+        require(MachineBlockEntity.GENERATOR_FE_PER_TICK
+                        / MachineBlockEntity.GENERATOR_INPUT_MPU_PER_TICK == 20L,
+                "generator must pay 20 FE per mPU burned");
+        require(MachineBlockEntity.ENERGY_CAPACITY == 1_000_000L,
+                "machines must buffer 1,000,000 FE");
+        require(MachineBlockEntity.ENERGY_CAPACITY
+                        >= MachineBlockEntity.GENERATOR_FE_PER_TICK * 1_000L,
+                "energy buffer must hold at least 1,000 generator ticks");
+        require(MachineBlockEntity.PIPE_MPU_PER_TRANSFER == 500L,
+                "pipes must move 500 mPU per active tick (100 mPU/t)");
+        require(MachineBlockEntity.PIPE_PHASE_MPU_PER_TRANSFER == 100L,
+                "phase pipes must move 100 mPU per phase per active tick (20 mPU/t)");
+        require(MachineBlockEntity.PIPE_MPU_PER_TRANSFER
+                        == MachineBlockEntity.INTAKE_MPU_PER_TICK * 4L,
+                "a mixed pipe must carry four intake towers");
+        require(MachineBlockEntity.PIPE_PHASE_MPU_PER_TRANSFER
+                        == MachineBlockEntity.GENERATOR_INPUT_MPU_PER_TICK * 4L,
+                "a phase pipe must carry four generators");
 
         require(MachineBlockEntity.mixedAccepted(2_000_000L, 900_000L) == 100_000L,
                 "mixed insert must accept only the remaining shared space");

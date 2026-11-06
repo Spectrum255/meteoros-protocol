@@ -25,7 +25,7 @@ import net.minecraft.world.item.ItemStack;
  * addon phases widen it automatically.
  */
 public class IntakeMenu extends AbstractContainerMenu {
-    public static final long ENERGY_CAPACITY = 100_000L;
+    public static final long ENERGY_CAPACITY = MachineBlockEntity.ENERGY_CAPACITY;
 
     private final BlockPos pos;
     private final MachineBlockEntity machine;

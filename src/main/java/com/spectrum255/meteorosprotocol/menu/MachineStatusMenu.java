@@ -30,7 +30,7 @@ import java.util.List;
  * phases are worth showing without inventing new data indices.
  */
 public class MachineStatusMenu extends AbstractContainerMenu {
-    public static final int ENERGY_CAPACITY = 100_000;
+    public static final int ENERGY_CAPACITY = (int) MachineBlockEntity.ENERGY_CAPACITY;
 
     /** Value of the kind field stored in bits 4-6 of the flags int. */
     public static final int KIND_GENERIC = 0;
