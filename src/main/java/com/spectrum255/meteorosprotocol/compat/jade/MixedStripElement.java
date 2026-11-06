@@ -64,8 +64,12 @@ public final class MixedStripElement implements IElement {
 
     @Override
     public void render(GuiGraphics graphics, float x, float y, float w, float h) {
-        int width = Math.round(w > 0.0F ? w : size.x);
-        int height = Math.round(h > 0.0F ? h : size.y);
+        // Jade hands elements the full remaining row width for stretchy content
+        // (see ProgressElement, which sizes itself from getCachedSize() instead
+        // of the passed w/h). Always draw at our own declared size so the strip
+        // stays a compact 72x8 pill instead of spanning the whole tooltip.
+        int width = Math.round(size.x);
+        int height = Math.round(size.y);
         if (width <= 0 || height <= 0) {
             return;
         }

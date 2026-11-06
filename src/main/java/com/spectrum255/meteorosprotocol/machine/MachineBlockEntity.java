@@ -360,6 +360,12 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         } else if (block == MeteorosProtocol.PHASE_SEPARATOR.get()) {
             machine.tickSeparator();
         } else if (block == MeteorosProtocol.THERMAL_GENERATOR.get()) {
+            // A generator has no separator pass of its own, but pipes and the
+            // player's canister can push mixed particles into its buffer. Drain
+            // the buffer into the phase tanks first so the stored Thermion shows
+            // up where the GUI and the recipe look for it. Lossless: the
+            // generator is not a refinery, it just relocates buffer content.
+            machine.settleMixedBuffer();
             boolean worked = machine.tickGenerator();
             if (worked) {
                 machine.activeHold = GENERATOR_ACTIVE_HOLD_TICKS;
@@ -1232,6 +1238,19 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
             moved += accepted;
         }
         return moved;
+    }
+
+    /**
+     * Moves everything currently in the mixed buffer into the phase tanks,
+     * losslessly. Machines that expose both a mixed buffer and phase tanks but
+     * have no separator pass of their own (the thermal generator) call this so
+     * particles pushed into the buffer by a pipe or a canister end up in the
+     * matching phase tank instead of sitting in the buffer forever.
+     */
+    private void settleMixedBuffer() {
+        if (getTotal() > 0L) {
+            separateMixedIntoTanks(MIXED_CAPACITY, 100L);
+        }
     }
 
     private void tickSeparator() {
