@@ -157,7 +157,9 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
 
     public enum RedstoneMode {
         /** Run only while a redstone signal reaches the block. */
-        REDSTONE_CONTROL,
+        HIGH,
+        /** Run only while no redstone signal reaches the block. */
+        LOW,
         /** Ignore redstone and keep running. */
         ALWAYS_ON
     }
@@ -754,8 +756,9 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
             return false;
         }
         return switch (redstoneMode) {
+            case HIGH -> level != null && level.hasNeighborSignal(worldPosition);
+            case LOW -> level == null || !level.hasNeighborSignal(worldPosition);
             case ALWAYS_ON -> true;
-            case REDSTONE_CONTROL -> level != null && level.hasNeighborSignal(worldPosition);
         };
     }
 
@@ -998,10 +1001,11 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         try {
             redstoneMode = RedstoneMode.valueOf(savedRedstoneMode);
         } catch (IllegalArgumentException exception) {
-            // Legacy S3/S4 saves used IGNORE/HIGH/LOW. IGNORE and unknown values
-            // keep the machine running; HIGH/LOW become the single redstone mode.
-            redstoneMode = savedRedstoneMode.equals("HIGH") || savedRedstoneMode.equals("LOW")
-                    ? RedstoneMode.REDSTONE_CONTROL
+            // Legacy S3/S4 saves used REDSTONE_CONTROL / IGNORE. The old
+            // signal-gated mode maps to HIGH; IGNORE and unknown values keep the
+            // machine running. HIGH/LOW already hit the new enum directly.
+            redstoneMode = savedRedstoneMode.equals("REDSTONE_CONTROL")
+                    ? RedstoneMode.HIGH
                     : RedstoneMode.ALWAYS_ON;
         }
         Phase savedCanisterPhase = Phase.byId(tag.getString("CanisterPhase"));

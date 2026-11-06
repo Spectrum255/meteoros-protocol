@@ -3,9 +3,13 @@
 """Meteoros Protocol - intake GUI button icons (16x16, 1x pixel art).
 
 Outputs into art/gui/icons/:
-    icon_power.png     power / on-off symbol (ring + bar)
-    icon_redstone.png  redstone torch + two signal arcs
-    icon_extract.png   canister outline + down arrow
+    icon_power.png           power / on-off symbol (ring + cyan bar)
+    icon_power_off.png       same ring, red bar -> "off"
+    icon_redstone.png        redstone torch + two signal arcs
+    icon_redstone_high.png   bright torch + up arrow (high level)
+    icon_redstone_low.png    unlit torch + down arrow (low level)
+    icon_redstone_always.png bright torch + amber bar (always on)
+    icon_extract.png         canister outline + down arrow
 
 Run:  python art/gui/gen_gui_icons.py [--ascii]
 
@@ -43,6 +47,10 @@ PAL = {
     "Y": (255, 253, 85, 255),    # #FFFD55 electric yellow
     "U": (192, 105, 47, 255),    # #C0692F copper
     "u": (138, 69, 30, 255),     # #8A451E copper shadow
+    "Z": (214, 75, 63, 255),     # #D64B3F power-off bar (user-specified)
+    "z": (168, 58, 49, 255),     # #A83A31 power-off bar shadow
+    "D": (232, 178, 60, 255),    # #E8B23C amber (always-on bar)
+    "d": (165, 118, 28, 255),    # #A5761C amber shadow
 }
 TRANSPARENT = (0, 0, 0, 0)
 BUTTON_GREY = (198, 198, 198, 255)  # vanilla button face #C6C6C6
@@ -106,6 +114,15 @@ def icon_power() -> Grid:
     return g
 
 
+def icon_power_off() -> Grid:
+    """Same ring/bar geometry as icon_power, bar recoloured #D64B3F."""
+    g = icon_power()
+    for y in (3, 4, 5):
+        g.set(7, y, "Z")
+        g.set(8, y, "z")
+    return g
+
+
 def icon_redstone() -> Grid:
     """Redstone torch: 8x6 red head with yellow core, 4x6 copper stem,
     two 2px dark-grey signal arcs left/right."""
@@ -134,6 +151,96 @@ def icon_redstone() -> Grid:
         g.rect(xs[0], y, xs[1], y, "K")
     for y, xs in ((9, (11, 12)), (10, (12, 13)), (11, (12, 13)), (12, (12, 13)), (13, (11, 12))):
         g.rect(xs[0], y, xs[1], y, "K")
+    return g
+
+
+def _torch_head(g: Grid, bright: bool) -> None:
+    """8x6 redstone-torch head at x4..11, y2..7 (lit or unlit)."""
+    fill = "R" if bright else "r"
+    g.rect(4, 2, 11, 2, "K")
+    for y in (3, 4, 5):
+        g.set(4, y, "K")
+        g.set(11, y, "K")
+        g.rect(5, y, 10, y, fill)
+    if bright:
+        g.rect(7, 4, 8, 5, "Y")            # lit core
+    else:
+        g.rect(7, 4, 8, 5, "s")            # cold core
+    g.set(4, 6, "K")
+    g.set(11, 6, "K")
+    g.rect(5, 6, 10, 6, "r")
+    g.rect(4, 7, 11, 7, "K")
+
+
+def _torch_stem(g: Grid, short: bool = False) -> None:
+    """4x6 copper stem x6..9, y8..13; short=True stops after one copper row
+    so the always-on bar can occupy y10..13."""
+    g.rect(6, 8, 9, 8, "K")
+    last = 9 if short else 12
+    for y in range(9, last + 1):
+        g.set(6, y, "K")
+        g.set(7, y, "U")
+        g.set(8, y, "u")
+        g.set(9, y, "K")
+    if not short:
+        g.rect(6, 13, 9, 13, "K")
+
+
+def _level_arrow(g: Grid, up: bool, fill: str) -> None:
+    """5x5 solid level triangle x9..13, y9..13 (1px K tip, 3px fill rows)."""
+    if up:
+        g.set(11, 9, "K")                       # tip
+        g.set(10, 10, "K")
+        g.set(12, 10, "K")
+        g.set(11, 10, fill)
+        g.set(9, 11, "K")
+        g.set(13, 11, "K")
+        g.rect(10, 11, 12, 11, fill)
+        g.set(9, 12, "K")
+        g.set(13, 12, "K")
+        g.rect(10, 12, 12, 12, fill)
+        g.rect(9, 13, 13, 13, "K")              # base
+    else:
+        g.rect(9, 9, 13, 9, "K")                # base
+        g.set(9, 10, "K")
+        g.set(13, 10, "K")
+        g.rect(10, 10, 12, 10, fill)
+        g.set(9, 11, "K")
+        g.set(13, 11, "K")
+        g.rect(10, 11, 12, 11, fill)
+        g.set(10, 12, "K")
+        g.set(12, 12, "K")
+        g.set(11, 12, fill)
+        g.set(11, 13, "K")                      # tip
+
+
+def icon_redstone_high() -> Grid:
+    g = Grid()
+    _torch_head(g, True)
+    _torch_stem(g)
+    _level_arrow(g, True, "R")
+    return g
+
+
+def icon_redstone_low() -> Grid:
+    g = Grid()
+    _torch_head(g, False)
+    _torch_stem(g)
+    _level_arrow(g, False, "r")
+    return g
+
+
+def icon_redstone_always() -> Grid:
+    g = Grid()
+    _torch_head(g, True)
+    _torch_stem(g, short=True)
+    # 10x4 amber base bar: K rim, 8x2 #E8B23C/#A5761C fill
+    g.rect(3, 10, 12, 10, "K")
+    g.rect(3, 13, 12, 13, "K")
+    g.rect(3, 11, 3, 12, "K")
+    g.rect(12, 11, 12, 12, "K")
+    g.rect(4, 11, 11, 11, "D")
+    g.rect(4, 12, 11, 12, "d")
     return g
 
 
@@ -174,9 +281,21 @@ def icon_extract() -> Grid:
 
 ICON_FUNCS = {
     "icon_power.png": icon_power,
+    "icon_power_off.png": icon_power_off,
     "icon_redstone.png": icon_redstone,
+    "icon_redstone_high.png": icon_redstone_high,
+    "icon_redstone_low.png": icon_redstone_low,
+    "icon_redstone_always.png": icon_redstone_always,
     "icon_extract.png": icon_extract,
 }
+
+# second batch shown together on the contact sheet
+SHEET_NAMES = [
+    "icon_power_off.png",
+    "icon_redstone_high.png",
+    "icon_redstone_low.png",
+    "icon_redstone_always.png",
+]
 
 
 # ------------------------------------------------------------------ checks --
@@ -292,7 +411,7 @@ def _button_mock(icon: Image.Image, scale: int = 4) -> Image.Image:
 
 
 def contact_sheet(imgs: dict[str, Image.Image]) -> None:
-    W, H = 1000, 690
+    W, H = 1320, 690
     sheet = Image.new("RGBA", (W, H), (16, 16, 16, 255))
     d = ImageDraw.Draw(sheet)
     f_title = _font(34, bold=True)
@@ -301,16 +420,17 @@ def contact_sheet(imgs: dict[str, Image.Image]) -> None:
     f_small = _font(14)
     f_tiny = _font(12)
 
-    d.text((40, 26), "Meteoros Protocol · 进气塔按钮图标（16×16，1×）", font=f_title, fill=PAL["p"])
-    d.text((40, 72), "原生 16×16 贴到 20×20 原版按钮，不缩放；轮廓统一 #33383D；透明底",
+    d.text((40, 26), "Meteoros Protocol · 按钮图标第二批（16×16，1×）", font=f_title, fill=PAL["p"])
+    d.text((40, 72), "电源关闭态 + 红石高/低/保持开启；原生 16×16 贴到 20×20 原版按钮，不缩放；轮廓 #33383D；透明底",
            font=f_sub, fill=(167, 188, 194, 255))
     d.line([40, 106, W - 40, 106], fill=PAL["K"], width=2)
 
-    cols = [40, 360, 680]
+    cols = [40, 350, 660, 970]
     descs = {
-        "icon_power.png": "环形 + 竖条：通用电源/启停；单态，状态交给 tooltip",
-        "icon_redstone.png": "红石火把 + 两道信号弧：信号/红石控制",
-        "icon_extract.png": "罐体 + 内部向下箭头：从混合缓冲抽进罐子",
+        "icon_power_off.png": "暗环 + 红竖条：已关闭（off）",
+        "icon_redstone_high.png": "亮火把 + 向上箭头：高电平",
+        "icon_redstone_low.png": "暗火把 + 向下箭头：低电平",
+        "icon_redstone_always.png": "亮火把 + 琥珀横条：保持开启",
     }
     for i, (name, im) in enumerate(imgs.items()):
         x = cols[i]
@@ -331,21 +451,22 @@ def contact_sheet(imgs: dict[str, Image.Image]) -> None:
         d.text((x, 456), "贴到原版按钮（#C6C6C6）", font=f_small, fill=(167, 188, 194, 255))
         d.text((x, 480), descs[name], font=f_tiny, fill=PAL["p"])
 
-    # palette legend
+    # palette legend (used colours only)
     y = 550
     d.text((40, y), "PALETTE", font=f_name, fill=PAL["p"])
     legend = [("K", "#33383D"), ("W", "#FFFFFF"), ("p", "#F7F4EC"), ("S", "#9AA3A8"),
               ("s", "#6C7479"), ("C", "#73FBFD"), ("c", "#2CAFBE"), ("R", "#EB3324"),
-              ("r", "#A61E13"), ("Y", "#FFFD55"), ("U", "#C0692F")]
+              ("r", "#A61E13"), ("Y", "#FFFD55"), ("U", "#C0692F"), ("Z", "#D64B3F"),
+              ("z", "#A83A31"), ("D", "#E8B23C"), ("d", "#A5761C")]
     for i, (k, hexv) in enumerate(legend):
-        lx = 40 + i * 86
+        lx = 40 + i * 80
         d.rectangle([lx, y + 30, lx + 20, y + 50], fill=PAL[k], outline=PAL["K"])
         d.text((lx + 25, y + 32), k, font=f_small, fill=PAL["p"])
         d.text((lx + 25, y + 48), hexv, font=f_tiny, fill=(167, 188, 194, 255))
     d.text((40, 650), "verify: 16×16 / RGBA / alpha 0|255 / bbox ≤12×12 / silhouette=#33383D / no isolated 1px dot",
            font=f_tiny, fill=(167, 188, 194, 255))
     sheet.save(ICONS / "contact-sheet.png")
-    print("  contact-sheet.png   1000x690")
+    print("  contact-sheet.png   1320x690")
 
 
 # --------------------------------------------------------------------- main --
@@ -363,14 +484,15 @@ def main() -> None:
     if "--ascii" in sys.argv:
         chars = {".": " ", "K": "#", "W": "W", "p": "p", "q": "q", "Q": "Q",
                  "S": "S", "H": "H", "s": "s", "C": "C", "c": "c",
-                 "R": "R", "r": "r", "Y": "Y", "U": "U", "u": "u"}
+                 "R": "R", "r": "r", "Y": "Y", "U": "U", "u": "u",
+                 "Z": "Z", "z": "z", "D": "D", "d": "d"}
         rev = {v: k for k, v in PAL.items()}
         rev[TRANSPARENT] = "."
         for name, im in imgs.items():
             print(f"\n{name}")
             for y in range(16):
                 print("".join(chars[rev[im.getpixel((x, y))]] for x in range(16)))
-    contact_sheet(imgs)
+    contact_sheet({name: imgs[name] for name in SHEET_NAMES})
     print("done")
 
 

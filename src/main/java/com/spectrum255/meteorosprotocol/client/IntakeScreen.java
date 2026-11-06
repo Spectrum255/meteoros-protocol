@@ -46,8 +46,11 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
     private static final int ICON_EXTRACT_Y = 62;
 
     private static final String ICON_ROOT = "textures/gui/";
-    private static final ResourceLocation ICON_POWER = icon("icon_power");
-    private static final ResourceLocation ICON_REDSTONE = icon("icon_redstone");
+    private static final ResourceLocation ICON_POWER_ON = icon("icon_power");
+    private static final ResourceLocation ICON_POWER_OFF = icon("icon_power_off");
+    private static final ResourceLocation ICON_REDSTONE_HIGH = icon("icon_redstone_high");
+    private static final ResourceLocation ICON_REDSTONE_LOW = icon("icon_redstone_low");
+    private static final ResourceLocation ICON_REDSTONE_ALWAYS = icon("icon_redstone_always");
     private static final ResourceLocation ICON_EXTRACT = icon("icon_extract");
 
     private final List<PhaseBarWidget> phaseBars = new ArrayList<>();
@@ -85,9 +88,10 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
 
         int buttonX = this.leftPos + ICON_BUTTON_X;
         this.toggleButton = this.addRenderableWidget(new IconButton(buttonX, this.topPos + ICON_TOGGLE_Y,
-                ICON_BUTTON_SIZE, ICON_BUTTON_SIZE, ICON_POWER, this::powerTooltip, button -> sendButton(0)));
+                ICON_BUTTON_SIZE, ICON_BUTTON_SIZE, this::powerIcon, this::powerTooltip, button -> sendButton(0)));
         this.redstoneButton = this.addRenderableWidget(new IconButton(buttonX, this.topPos + ICON_REDSTONE_Y,
-                ICON_BUTTON_SIZE, ICON_BUTTON_SIZE, ICON_REDSTONE, this::redstoneTooltip, button -> sendButton(1)));
+                ICON_BUTTON_SIZE, ICON_BUTTON_SIZE, this::redstoneIcon, this::redstoneTooltip,
+                button -> sendButton(1)));
         this.extractButton = this.addRenderableWidget(new IconButton(buttonX, this.topPos + ICON_EXTRACT_Y,
                 ICON_BUTTON_SIZE, ICON_BUTTON_SIZE, ICON_EXTRACT, this::extractTooltip, button -> sendButton(8)));
 
@@ -297,16 +301,30 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
         MeteorosGui.tooltip(graphics, this.font, List.of(line, hint), mouseX, mouseY, 0xFF9A9A9A);
     }
 
+    private ResourceLocation powerIcon() {
+        return this.menu.enabled() ? ICON_POWER_ON : ICON_POWER_OFF;
+    }
+
+    private ResourceLocation redstoneIcon() {
+        return switch (this.menu.redstoneMode()) {
+            case 0 -> ICON_REDSTONE_HIGH;
+            case 1 -> ICON_REDSTONE_LOW;
+            default -> ICON_REDSTONE_ALWAYS;
+        };
+    }
+
     private List<Component> powerTooltip() {
-        boolean work = this.menu.enabled();
-        return List.of(Component.translatable(
-                work ? "gui.meteorosprotocol.intake.work.on" : "gui.meteorosprotocol.intake.work.off"));
+        return List.of(Component.translatable(this.menu.enabled()
+                ? "gui.meteorosprotocol.intake.power.enabled"
+                : "gui.meteorosprotocol.intake.power.disabled"));
     }
 
     private List<Component> redstoneTooltip() {
-        String key = this.menu.redstoneMode() == 1
-                ? "gui.meteorosprotocol.intake.redstone.always"
-                : "gui.meteorosprotocol.intake.redstone.control";
+        String key = switch (this.menu.redstoneMode()) {
+            case 0 -> "gui.meteorosprotocol.intake.redstone.high";
+            case 1 -> "gui.meteorosprotocol.intake.redstone.low";
+            default -> "gui.meteorosprotocol.intake.redstone.always";
+        };
         return List.of(Component.translatable(key));
     }
 
