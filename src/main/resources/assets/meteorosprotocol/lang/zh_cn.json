@@ -60,6 +60,7 @@
   "gui.meteorosprotocol.machine.working": "工作中",
   "gui.meteorosprotocol.machine.idle": "待机",
   "gui.meteorosprotocol.machine.no_particles": "无粒子输入输出",
+  "gui.meteorosprotocol.machine.pin_hint": "点击钉住高亮",
   "gui.meteorosprotocol.side.open": "面配置",
   "gui.meteorosprotocol.side.mixed": "混合",
   "gui.meteorosprotocol.side.phase": "六相",

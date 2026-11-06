@@ -59,6 +59,7 @@
   "gui.meteorosprotocol.machine.working": "Working",
   "gui.meteorosprotocol.machine.idle": "Idle",
   "gui.meteorosprotocol.machine.no_particles": "No particle I/O",
+  "gui.meteorosprotocol.machine.pin_hint": "Click to pin the highlight",
   "gui.meteorosprotocol.side.open": "Side I/O",
   "gui.meteorosprotocol.side.mixed": "Mixed",
   "gui.meteorosprotocol.side.phase": "Phases",
