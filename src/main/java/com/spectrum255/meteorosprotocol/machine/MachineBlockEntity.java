@@ -80,31 +80,25 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
     /** Fallback when the config is unloaded (e.g. very early in startup). */
     private static final double DEFAULT_INTAKE_CAPTURE_LOSS = 0.20D;
 
-    // ---- throughput caps (transport): only upper bounds on how much moves per call ----
-    /**
-     * Mixed pipe transfer budget per active pipe tick (every 5 ticks):
-     * 500 / 5 t = 100 mPU/t, four times a tower's capture rate.
-     */
-    public static final long PIPE_MPU_PER_TRANSFER = 500L;
-    /**
-     * Per-phase pipe budget per active pipe tick: 100 / 5 t = 20 mPU/t for each
-     * phase. Pipes stay deliberately slower than a machine's own active I/O.
-     */
-    public static final long PIPE_PHASE_MPU_PER_TRANSFER = 100L;
+    // ---- transport: no artificial throughput cap ----
+    // Amount moved per call is bounded only by the source stock and the target's
+    // remaining capacity. Integer.MAX_VALUE is a sentinel for "effectively
+    // unlimited"; it stays in long arithmetic and must never be narrowed to int
+    // or used in +(int) expressions. Do not reintroduce 500/5,000 style caps:
+    // the game speed is governed by processing rates above, not by transport.
+    /** Mixed pipe transfer budget per active pipe tick (pipes still tick every 5 ticks). */
+    public static final long PIPE_MPU_PER_TRANSFER = Integer.MAX_VALUE;
+    /** Per-phase pipe budget per active pipe tick. */
+    public static final long PIPE_PHASE_MPU_PER_TRANSFER = Integer.MAX_VALUE;
     private static final long PIPE_INTERVAL = 5L;
 
-    /**
-     * Per-call budget of a machine's own active I/O (one call every 5 ticks).
-     * This is only an upper bound on transport: the amount actually moved is
-     * still limited by what the source holds and what the destination accepts,
-     * so no particles are ever created.
-     */
-    public static final long ACTIVE_IO_BUDGET_PER_CALL = 5_000L;
+    /** Per-call budget of a machine's own active I/O (one call every tick). */
+    public static final long ACTIVE_IO_BUDGET_PER_CALL = Integer.MAX_VALUE;
 
-    /** Per-call mixed budget of the configurable port (one call every 5 ticks). */
-    public static final long PORT_MPU_PER_TRANSFER = 5_000L;
-    /** Per-phase per-call budget of the configurable port (one call every 5 ticks). */
-    public static final long PORT_PHASE_MPU_PER_TRANSFER = 1_000L;
+    /** Per-call mixed budget of the configurable port (one call every tick). */
+    public static final long PORT_MPU_PER_TRANSFER = Integer.MAX_VALUE;
+    /** Per-phase per-call budget of the configurable port (one call every tick). */
+    public static final long PORT_PHASE_MPU_PER_TRANSFER = Integer.MAX_VALUE;
 
     /** Shared total capacity of the mixed buffer (1,000 PU). */
     public static final long MIXED_CAPACITY = 1_000_000L;
@@ -199,10 +193,16 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
     private final IEnergyStorage[] energyViews = new IEnergyStorage[7];
     private final IItemHandler[] itemViews = new IItemHandler[7];
 
-    /** FE pushed through an OUT face per active-I/O window (500 FE/t). */
-    public static final int ENERGY_TRANSFER_PER_INTERVAL = 2_500;
-    /** Items moved through an ITEM face per active-I/O window. */
-    public static final int ITEM_TRANSFER_PER_INTERVAL = 4;
+    /**
+     * FE pushed through an OUT face per tick. No artificial cap: the destination's
+     * remaining energy buffer is the only limit.
+     */
+    public static final long ENERGY_TRANSFER_PER_TICK = Integer.MAX_VALUE;
+    /**
+     * Items offered through an ITEM face per tick. No artificial cap: slot count
+     * and stack limit of the destination decide how much actually moves.
+     */
+    public static final long ITEM_TRANSFER_PER_TICK = Integer.MAX_VALUE;
 
     /** Extract-only view used by the intake tower's output port. */
     private final MixedStorage extractOnly = new MixedStorage() {
@@ -412,15 +412,12 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
                 level.setBlock(pos, state.setValue(MachineBlock.ACTIVE, active), Block.UPDATE_CLIENTS);
             }
         } else if (block == MeteorosProtocol.PARTICLE_PORT.get()) {
-            if (machine.progress % PIPE_INTERVAL == 0L) {
-                machine.tickPort(level, pos);
-            }
+            machine.tickPort(level, pos);
         }
-        // Machines with particle I/O act on their direct neighbours every 5 ticks;
+        // Machines with particle I/O act on their direct neighbours every tick;
         // pipes keep running their own tickPipe pass and are left out of this one.
         if (block != MeteorosProtocol.PARTICLE_PIPE.get()
-                && machine.autoIo
-                && machine.progress % PIPE_INTERVAL == 0L) {
+                && machine.autoIo) {
             machine.tickActiveIo(level, pos);
         }
         machine.progress++;
@@ -724,26 +721,23 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
     }
 
     /**
-     * Machines with particle I/O exchange with their six direct neighbours once
-     * every {@link #PIPE_INTERVAL} ticks, so a machine touching a container or
-     * another machine moves material without a pipe. Nothing is chained, and
-     * adjacent pipes are skipped because {@link #tickPipe(ServerLevel, BlockPos)}
-     * already pulls from machines at the same cadence (skipping avoids moving the
-     * same material twice per tick window).
+     * Machines with particle I/O exchange with their six direct neighbours every
+     * tick, so a machine touching a container or another machine moves material
+     * without a pipe. Nothing is chained, and adjacent pipes are skipped because
+     * {@link #tickPipe(ServerLevel, BlockPos)} already pulls from machines (the
+     * pipe pass runs every {@link #PIPE_INTERVAL} ticks).
      *
      * <p>Direction table:</p>
      * <ul>
-     *   <li>generator: pull up to {@link #ACTIVE_IO_BUDGET_PER_CALL} mPU Thermion
-     *       (phase tanks first, mixed buffer second); its byproduct output is
-     *       still handled in {@code tickGenerator};</li>
-     *   <li>separator: pull up to {@link #ACTIVE_IO_BUDGET_PER_CALL} mPU mixed
-     *       while below 25% buffered, push up to the same budget across its
+     *   <li>generator: pull Thermion (phase tanks first, mixed buffer second);
+     *       its byproduct output is still handled in {@code tickGenerator};</li>
+     *   <li>separator: pull mixed while below 25% buffered, push across its
      *       stored phases (equal shares, leftover reused);</li>
-     *   <li>intake tower: push up to 500 mPU mixed and 100 mPU of each phase;</li>
+     *   <li>intake tower: push mixed and every stored phase;</li>
      *   <li>weather blocks and pipes: no active I/O.</li>
      * </ul>
-     * <p>Budgets are upper bounds only: the actual transfer is clamped by the
-     * source stock and the destination's remaining space.</p>
+     * <p>There is no artificial throughput cap: every call moves as much as the
+     * source holds and the destination's remaining space allows.</p>
      */
     private void tickActiveIo(ServerLevel level, BlockPos pos) {
         Block block = getBlockState().getBlock();
@@ -797,7 +791,7 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
             if (target == null) {
                 continue;
             }
-            int budget = (int) Math.min(Integer.MAX_VALUE, Math.min(ENERGY_TRANSFER_PER_INTERVAL, energy));
+            int budget = (int) Math.min(ENERGY_TRANSFER_PER_TICK, energy);
             if (budget <= 0) {
                 continue;
             }
@@ -832,7 +826,7 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
             if (target == null) {
                 continue;
             }
-            ItemStack offered = output.copyWithCount(Math.min(ITEM_TRANSFER_PER_INTERVAL, output.getCount()));
+            ItemStack offered = output.copyWithCount((int) Math.min(ITEM_TRANSFER_PER_TICK, output.getCount()));
             ItemStack leftover = offered;
             for (int slot = 0; slot < target.getSlots() && !leftover.isEmpty(); slot++) {
                 leftover = target.insertItem(slot, leftover, true);
@@ -875,7 +869,7 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
                     continue;
                 }
                 for (int slot = 0; slot < source.getSlots(); slot++) {
-                    ItemStack candidate = source.extractItem(slot, ITEM_TRANSFER_PER_INTERVAL, true);
+                    ItemStack candidate = source.extractItem(slot, (int) Math.min(ITEM_TRANSFER_PER_TICK, source.getStackInSlot(slot).getCount()), true);
                     if (candidate.isEmpty() || !items.canPlaceItem(targetSlot, candidate)) {
                         continue;
                     }
@@ -1184,8 +1178,8 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
     /**
      * The port's I/O: FACING points at the container it services. When the port
      * holds anything it pushes into that container; when it is empty it pulls
-     * from it, using the pipe budgets (500 mPU mixed, 100 mPU per phase per
-     * 5-tick window).
+     * from it. Runs every tick and has no artificial throughput cap: the moved
+     * amount is bounded only by the source stock and the target's free space.
      */
     private void tickPort(ServerLevel level, BlockPos pos) {
         BlockState ownState = getBlockState();

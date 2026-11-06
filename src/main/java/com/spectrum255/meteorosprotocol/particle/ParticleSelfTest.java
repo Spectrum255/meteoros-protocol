@@ -359,27 +359,20 @@ public final class ParticleSelfTest {
         require(MachineBlockEntity.ENERGY_CAPACITY
                         >= MachineBlockEntity.GENERATOR_FE_PER_TICK * 1_000L,
                 "energy buffer must hold at least 1,000 generator ticks");
-        require(MachineBlockEntity.PIPE_MPU_PER_TRANSFER == 500L,
-                "pipes must move 500 mPU per active tick (100 mPU/t)");
-        require(MachineBlockEntity.PIPE_PHASE_MPU_PER_TRANSFER == 100L,
-                "phase pipes must move 100 mPU per phase per active tick (20 mPU/t)");
-        require(MachineBlockEntity.PIPE_MPU_PER_TRANSFER
-                        == MachineBlockEntity.INTAKE_MPU_PER_TICK * 4L,
-                "a mixed pipe must carry four intake towers");
-        require(MachineBlockEntity.PIPE_PHASE_MPU_PER_TRANSFER
-                        == MachineBlockEntity.GENERATOR_INPUT_MPU_PER_TICK * 4L,
-                "a phase pipe must carry four generators");
-        require(MachineBlockEntity.ACTIVE_IO_BUDGET_PER_CALL > 25L,
-                "machine active I/O must no longer use the old 25 mPU transfer budget");
-        require(MachineBlockEntity.ACTIVE_IO_BUDGET_PER_CALL
-                        > MachineBlockEntity.PIPE_MPU_PER_TRANSFER,
-                "machine active I/O must move more per call than a pipe");
-        require(MachineBlockEntity.PORT_MPU_PER_TRANSFER
-                        > MachineBlockEntity.PIPE_MPU_PER_TRANSFER,
-                "a port must move more mixed mPU per call than a pipe");
-        require(MachineBlockEntity.PORT_PHASE_MPU_PER_TRANSFER
-                        > MachineBlockEntity.PIPE_PHASE_MPU_PER_TRANSFER,
-                "a port must move more per phase than a phase pipe");
+        require(MachineBlockEntity.PIPE_MPU_PER_TRANSFER == Integer.MAX_VALUE,
+                "pipes must have no artificial mixed throughput cap");
+        require(MachineBlockEntity.PIPE_PHASE_MPU_PER_TRANSFER == Integer.MAX_VALUE,
+                "phase pipes must have no artificial per-phase throughput cap");
+        require(MachineBlockEntity.ACTIVE_IO_BUDGET_PER_CALL == Integer.MAX_VALUE,
+                "machine active I/O must have no artificial per-call cap");
+        require(MachineBlockEntity.PORT_MPU_PER_TRANSFER == Integer.MAX_VALUE,
+                "the configurable port must have no artificial mixed cap");
+        require(MachineBlockEntity.PORT_PHASE_MPU_PER_TRANSFER == Integer.MAX_VALUE,
+                "the configurable port must have no artificial per-phase cap");
+        require(MachineBlockEntity.ENERGY_TRANSFER_PER_TICK == Integer.MAX_VALUE,
+                "energy push must have no artificial per-tick cap");
+        require(MachineBlockEntity.ITEM_TRANSFER_PER_TICK == Integer.MAX_VALUE,
+                "item push must have no artificial per-tick cap");
         require(MachineBlockEntity.INTAKE_MPU_PER_TICK == 25L
                         && MachineBlockEntity.SEPARATOR_MAX_INPUT_MPU_PER_TICK == 25L
                         && MachineBlockEntity.GENERATOR_INPUT_MPU_PER_TICK == 25L,
