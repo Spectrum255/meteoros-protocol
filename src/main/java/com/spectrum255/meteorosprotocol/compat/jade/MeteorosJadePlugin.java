@@ -56,7 +56,7 @@ public final class MeteorosJadePlugin implements IWailaPlugin {
         private static final String MIXED_PREFIX = "Mixed.";
         private static final int MAX_PHASE_BARS = 3;
         private static final int ENERGY_COLOR = 0xFFD24B3F;
-        private static final int MIXED_EMPTY_COLOR = 0xFF555555;
+        private static final int MIXED_COLOR = 0xFF8B8B8B;
 
         @Override
         public ResourceLocation getUid() {
@@ -131,12 +131,10 @@ public final class MeteorosJadePlugin implements IWailaPlugin {
                     box,
                     true));
 
-            Phase dominant = dominantMixedPhase(root, machine);
-            int mixedColor = dominant == null ? MIXED_EMPTY_COLOR : dominant.argb();
             tooltip.add(helper.progress(
                     fraction(mixed, MachineBlockEntity.MIXED_CAPACITY),
                     Component.literal(num(mixed) + " / " + num(MachineBlockEntity.MIXED_CAPACITY) + " mPU"),
-                    helper.progressStyle().color(mixedColor),
+                    helper.progressStyle().color(MIXED_COLOR),
                     box,
                     true));
 
@@ -165,20 +163,6 @@ public final class MeteorosJadePlugin implements IWailaPlugin {
                 tooltip.add(Component.translatable("jade.meteorosprotocol.phases.empty")
                         .withStyle(ChatFormatting.GRAY));
             }
-        }
-
-        /** The phase holding the most mPU in the mixed buffer, or null when empty. */
-        private static Phase dominantMixedPhase(CompoundTag root, MachineBlockEntity machine) {
-            Phase dominant = null;
-            long best = 0L;
-            for (Phase phase : Phase.all()) {
-                long amount = mixedAmount(root, machine, phase);
-                if (amount > best) {
-                    best = amount;
-                    dominant = phase;
-                }
-            }
-            return dominant;
         }
 
         /** Non-zero phase tanks, in registry order (core phases first). */

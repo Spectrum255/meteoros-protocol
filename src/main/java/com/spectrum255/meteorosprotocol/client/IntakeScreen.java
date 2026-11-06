@@ -36,7 +36,8 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
     private static final int TITLE_COLOR = 0xFF404040;
     private static final int GHOST = 0x66C8D0D8;
     private static final int FE_COLOR = 0xFFFF0000;
-    private static final int MIXED_EMPTY_COLOR = 0xFF555555;
+    /** The mixed buffer always uses one fixed grey; it is a summed pool, not a phase. */
+    private static final int MIXED_COLOR = 0xFF8B8B8B;
 
     /** 20 x 20 square icon buttons on the right of the content band. */
     private static final int ICON_BUTTON_SIZE = 20;
@@ -170,19 +171,9 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
         graphics.fill(x + 1, y + 1, x + width - 1, y + height - 1, MeteorosGui.SLOT_BODY);
     }
 
-    /** Colour of the mixed-buffer bar: the phase holding the most mPU. */
-    private int mixedBufferColor() {
-        int count = Math.min(Phase.all().size(), IntakeLayout.PHASE_BAR_COUNT);
-        int best = -1;
-        long bestAmount = 0L;
-        for (int i = 0; i < count; i++) {
-            long amount = this.menu.mixedAmount(i);
-            if (amount > bestAmount) {
-                bestAmount = amount;
-                best = i;
-            }
-        }
-        return best < 0 ? MIXED_EMPTY_COLOR : Phase.all().get(best).argb();
+    /** Colour of the mixed-buffer bar: one fixed grey, independent of composition. */
+    private static int mixedBufferColor() {
+        return MIXED_COLOR;
     }
 
     /** Phase currently selected as the extraction target, clamped for safety. */
