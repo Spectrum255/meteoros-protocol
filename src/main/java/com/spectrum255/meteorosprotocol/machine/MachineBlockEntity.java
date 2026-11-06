@@ -111,7 +111,7 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
 
         @Override
         public long insert(Phase phase, long amount, boolean simulate) {
-            if (!acceptsInput(phase)) {
+            if (!acceptsInput(phase) || !acceptsGeneratorFuel(phase)) {
                 return 0L;
             }
             long moved = phaseAccepted(phase, amount, phases[phase.index()]);
@@ -673,9 +673,13 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
     private void tickActiveIo(ServerLevel level, BlockPos pos) {
         Block block = getBlockState().getBlock();
         if (block == MeteorosProtocol.THERMAL_GENERATOR.get()) {
-            long pulled = pullPhaseFromNeighbours(level, Phase.THERMION, ACTIVE_IO_SMALL_BUDGET, false);
-            if (pulled < ACTIVE_IO_SMALL_BUDGET) {
-                pullPhaseFromNeighbours(level, Phase.THERMION, ACTIVE_IO_SMALL_BUDGET - pulled, true);
+            // A full FE buffer pauses fuel intake: do not drain the line while
+            // there is no room for the energy that Thermion would produce.
+            if (energy <= ENERGY_CAPACITY - GENERATOR_FE_PER_TICK) {
+                long pulled = pullPhaseFromNeighbours(level, Phase.THERMION, ACTIVE_IO_SMALL_BUDGET, false);
+                if (pulled < ACTIVE_IO_SMALL_BUDGET) {
+                    pullPhaseFromNeighbours(level, Phase.THERMION, ACTIVE_IO_SMALL_BUDGET - pulled, true);
+                }
             }
         } else if (block == MeteorosProtocol.PHASE_SEPARATOR.get()) {
             if (getTotal() < MIXED_CAPACITY / 4L) {
@@ -1300,6 +1304,13 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
      * byproduct. Only reached once a generator upgrade exists; neighbour
      * storages are filled first, then the local tank, and only a full tank spills
      * into the mixed buffer.
+     *
+     * <p>Anything that still does not fit is silently discarded: this is the
+     * only place in the mod that drops product on overflow. It is unreachable
+     * today because {@link #hasGeneratorUpgrade()} is always false. When the
+     * upgrade slot ships, add a capacity precheck here (or before the Thermion
+     * is consumed) so the generator can pause instead of discarding, and treat
+     * "void on overflow" as an opt-in policy rather than the default.</p>
      */
     private void emitGeneratorByproduct() {
         int productIndex = Phase.IMPURE_AETHERON.index();
@@ -1766,6 +1777,20 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
     }
 
     /**
+     * A thermal generator stops taking Thermion while its FE buffer is full:
+     * with nowhere to put the energy there is no point in pulling more fuel, and
+     * a full buffer should back-pressure the line instead of draining it. Pipes,
+     * ports, canisters and active I/O all go through {@link #insert(Phase, long,
+     * boolean)} or the phase storage view, so this closes every input path.
+     */
+    private boolean acceptsGeneratorFuel(Phase phase) {
+        if (getBlockState().getBlock() != MeteorosProtocol.THERMAL_GENERATOR.get()) {
+            return true;
+        }
+        return phase != Phase.THERMION || energy <= ENERGY_CAPACITY - GENERATOR_FE_PER_TICK;
+    }
+
+    /**
      * Pushes up to {@code amount} of a freshly produced phase into adjacent
      * {@code PHASE_STORAGE}s (the capability has no direction context, so it is
      * queried with two arguments). Anything the neighbours cannot take is left
@@ -2014,7 +2039,7 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
 
     @Override
     public long insert(Phase phase, long amount, boolean simulate) {
-        if (!acceptsInput(phase)) {
+        if (!acceptsInput(phase) || !acceptsGeneratorFuel(phase)) {
             return 0L;
         }
         long moved = mixedAccepted(amount, getTotal());

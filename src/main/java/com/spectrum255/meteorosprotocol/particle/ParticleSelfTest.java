@@ -652,6 +652,26 @@ public final class ParticleSelfTest {
                 "a bare generator must not produce impure Aetheron");
         require(generator.getTotal() == mixedBefore,
                 "a generator tick must not change the mixed buffer");
+
+        // A full FE buffer must back-pressure the fuel line: no external Thermion
+        // is accepted and no tick consumes what is already in the tank.
+        generator.receiveEnergy((int) MachineBlockEntity.ENERGY_CAPACITY, false);
+        require(generator.energy() == MachineBlockEntity.ENERGY_CAPACITY,
+                "the generator energy buffer must fill for the back-pressure check");
+        long tankBeforeFull = generator.phaseStorage().getAmount(Phase.THERMION);
+        long mixedBeforeFull = generator.getTotal();
+        require(generator.insert(Phase.THERMION, 1_000L, false) == 0L,
+                "a full generator must refuse external Thermion mixed inserts");
+        require(generator.phaseStorage().insert(Phase.THERMION, 1_000L, false) == 0L,
+                "a full generator must refuse external Thermion tank inserts");
+        require(generator.phaseStorage().getAmount(Phase.THERMION) == tankBeforeFull,
+                "refused Thermion must not land in the tank");
+        require(generator.getTotal() == mixedBeforeFull,
+                "refused Thermion must not land in the mixed buffer");
+        require(!generator.runGeneratorTickForSelfTest(),
+                "a full generator must not burn Thermion");
+        require(generator.phaseStorage().getAmount(Phase.THERMION) == tankBeforeFull,
+                "a paused generator must leave its tank untouched");
     }
 
     private static boolean near(float actual, float expected) {
