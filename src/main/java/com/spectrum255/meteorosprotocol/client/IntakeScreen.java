@@ -9,6 +9,7 @@ import com.spectrum255.meteorosprotocol.client.gui.SideConfigPanel;
 import com.spectrum255.meteorosprotocol.item.InfiniteParticleCanisterItem;
 import com.spectrum255.meteorosprotocol.machine.MachineBlockEntity;
 import com.spectrum255.meteorosprotocol.machine.SideChannel;
+import com.spectrum255.meteorosprotocol.particle.ParticleFormat;
 import com.spectrum255.meteorosprotocol.particle.Phase;
 import com.spectrum255.meteorosprotocol.menu.IntakeMenu;
 import net.minecraft.client.gui.GuiGraphics;
@@ -21,7 +22,6 @@ import net.minecraft.world.item.ItemStack;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 
 /**
  * Intake tower screen: 176 x 180, vanilla-styled container panel with a wide
@@ -162,9 +162,12 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
                 (float) ((double) this.menu.mixedTotal() / (double) MachineBlockEntity.MIXED_CAPACITY),
                 MIXED_COLOR, 0xFF555555);
 
-        MeteorosGui.barH(graphics, x + IntakeLayout.FE_X, y + IntakeLayout.FE_Y,
+        MeteorosGui.barHWithText(graphics, this.font, x + IntakeLayout.FE_X, y + IntakeLayout.FE_Y,
                 IntakeLayout.FE_WIDTH, IntakeLayout.FE_HEIGHT,
-                (float) ((double) this.menu.energy() / (double) IntakeMenu.ENERGY_CAPACITY), FE_COLOR);
+                (float) ((double) this.menu.energy() / (double) IntakeMenu.ENERGY_CAPACITY),
+                FE_COLOR, 0xFF555555,
+                Component.literal(ParticleFormat.formatFE(this.menu.energy()) + " / "
+                        + ParticleFormat.formatFE(IntakeMenu.ENERGY_CAPACITY)));
 
         boolean filterHovered = inside(mouseX, mouseY,
                 x + IntakeLayout.FILTER_SLOT_X, y + IntakeLayout.FILTER_SLOT_Y, 16, 16);
@@ -239,6 +242,16 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         super.render(graphics, mouseX, mouseY, partialTick);
         if (this.sidePanel.visible()) {
+            // AbstractContainerScreen queues the hovered item's tooltip through
+            // setTooltipForNextRenderPass; Screen.renderWithTooltip draws it
+            // AFTER render() returns, which would paint it on top of our overlay.
+            // Drop the queued tooltip so only the panel (and its own tooltip) are
+            // visible while the overlay is open.
+            this.clearTooltipForNextRenderPass();
+            // Slot items are batched through the GUI buffer source; flush them now so
+            // the opaque overlay is submitted after their draw calls instead of being
+            // painted underneath a later batch flush.
+            graphics.flush();
             // Opaque backdrop over the whole container window: the overlay must sit
             // above the slot grid and the player inventory, not underneath them.
             graphics.fill(this.leftPos - 1, this.topPos - 1,
@@ -250,8 +263,22 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
                     sideMasks(), mouseX, mouseY);
             return;
         }
+        // Flush batched slot items before drawing our own tooltips, otherwise the
+        // deferred batch can end up painted above them.
+        graphics.flush();
         this.renderTooltip(graphics, mouseX, mouseY);
         drawTooltips(graphics, mouseX, mouseY);
+    }
+
+    @Override
+    protected void renderTooltip(GuiGraphics graphics, int mouseX, int mouseY) {
+        // The side-config overlay owns the screen while it is open: never queue an
+        // item tooltip that would be rendered after our overlay.
+        if (this.sidePanel.visible()) {
+            this.clearTooltipForNextRenderPass();
+            return;
+        }
+        super.renderTooltip(graphics, mouseX, mouseY);
     }
 
     private int[] sideMasks() {
@@ -309,15 +336,15 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
         if (inside(mouseX, mouseY, x + IntakeLayout.MIXED_BAR_X, y + IntakeLayout.MIXED_BAR_Y,
                 IntakeLayout.MIXED_BAR_WIDTH, IntakeLayout.MIXED_BAR_HEIGHT)) {
             String line = Component.translatable("gui.meteorosprotocol.intake.mixed").getString()
-                    + ": " + String.format(Locale.ROOT, "%,d", this.menu.mixedTotal())
-                    + " / 1,000,000 mPU";
+                    + ": " + ParticleFormat.formatPlain(this.menu.mixedTotal(), "mPU")
+                    + " / " + ParticleFormat.formatPlain(MachineBlockEntity.MIXED_CAPACITY, "mPU");
             MeteorosGui.tooltip(graphics, this.font, Component.literal(line), mouseX, mouseY);
             return;
         }
         if (inside(mouseX, mouseY, x + IntakeLayout.FE_X, y + IntakeLayout.FE_Y,
                 IntakeLayout.FE_WIDTH, IntakeLayout.FE_HEIGHT)) {
-            String line = "FE " + String.format(Locale.ROOT, "%,d", this.menu.energy()) + " / "
-                    + String.format(Locale.ROOT, "%,d", IntakeMenu.ENERGY_CAPACITY);
+            String line = "FE " + ParticleFormat.formatPlain(this.menu.energy(), "FE") + " / "
+                    + ParticleFormat.formatPlain(IntakeMenu.ENERGY_CAPACITY, "FE");
             MeteorosGui.tooltip(graphics, this.font, Component.literal(line), mouseX, mouseY);
             return;
         }
@@ -388,11 +415,11 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
         long stored = this.menu.phaseAmount(index);
         long capacity = value.tankCapacity();
         Component tankLine = Component.literal(value.displayName().getString()
-                + ": " + String.format(Locale.ROOT, "%,d", stored)
-                + " / " + String.format(Locale.ROOT, "%,d", capacity) + " mPU");
+                + ": " + ParticleFormat.formatPlain(stored, "mPU")
+                + " / " + ParticleFormat.formatPlain(capacity, "mPU"));
         Component mixedLine = Component.literal(
                 Component.translatable("gui.meteorosprotocol.intake.mixed").getString()
-                        + ": " + String.format(Locale.ROOT, "%,d", this.menu.mixedAmount(index)) + " mPU");
+                        + ": " + ParticleFormat.formatPlain(this.menu.mixedAmount(index), "mPU"));
         Component hint = Component.translatable("gui.meteorosprotocol.intake.select_hint");
         MeteorosGui.tooltip(graphics, this.font, List.of(tankLine, mixedLine, hint), mouseX, mouseY,
                 0xFF9A9A9A);

@@ -207,6 +207,8 @@ public class MachineStatusMenu extends AbstractContainerMenu {
     public List<Phase> relevantPhases() {
         return switch (kind()) {
             case KIND_GENERATOR -> List.of(Phase.THERMION);
+            case KIND_SEPARATOR -> List.of(
+                    Phase.IMPURE_AETHERON, Phase.AETHERON, Phase.THERMION, Phase.CRYON);
             case KIND_WEATHER -> List.of();
             default -> Phase.all();
         };

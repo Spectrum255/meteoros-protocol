@@ -1,6 +1,10 @@
 package com.spectrum255.meteorosprotocol.compat.jade;
 
+import com.spectrum255.meteorosprotocol.particle.ParticleFormat;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec2;
 import snownee.jade.api.ui.IElement;
@@ -14,19 +18,29 @@ import snownee.jade.api.ui.IElement;
  * <p>Jade's {@code IElementHelper.progress(...)} can only draw one colour, so
  * this element implements {@link IElement} directly. Jade has no public base
  * class for elements; the remaining methods are plain value setters/getters.</p>
+ *
+ * <p>The bar mirrors vanilla/Jade energy meters: it is 14 px tall (the same as
+ * {@code ProgressElement} with a text line) and its width is derived from the
+ * compact {@code total / capacity} label so the number sits inside the bar
+ * instead of taking a separate tooltip row.</p>
  */
 public final class MixedStripElement implements IElement {
     private static final int BORDER_COLOR = 0xFF373737;
     private static final int TRACK_COLOR = 0xFF555555;
-    private static final float DEFAULT_WIDTH = 72.0F;
-    private static final float DEFAULT_HEIGHT = 8.0F;
+    /** Same height as {@code ProgressElement} when it carries a text line. */
+    private static final float DEFAULT_HEIGHT = 14.0F;
+    /** Jade's own progress bar never gets narrower than this. */
+    private static final float MIN_WIDTH = 20.0F;
+    private static final int TEXT_COLOR = 0xFFFFFF;
 
     private final int[] colors;
     private final long[] amounts;
     private final long total;
     private final long capacity;
+    private final Component text;
+    private final float preferredWidth;
 
-    private Vec2 size = new Vec2(DEFAULT_WIDTH, DEFAULT_HEIGHT);
+    private Vec2 size;
     private Vec2 translation = Vec2.ZERO;
     private IElement.Align alignment = IElement.Align.LEFT;
     private ResourceLocation tag;
@@ -44,6 +58,12 @@ public final class MixedStripElement implements IElement {
         this.amounts = amounts;
         this.total = total;
         this.capacity = capacity;
+        this.text = Component.literal(ParticleFormat.formatMPU(total) + " / "
+                + ParticleFormat.formatMPU(capacity));
+        Font font = Minecraft.getInstance().font;
+        // Same geometry as Jade's own bar: 2 px border, 3 px padding right of the label.
+        this.preferredWidth = Math.max(MIN_WIDTH, font.width(this.text) + 5.0F);
+        this.size = new Vec2(preferredWidth, DEFAULT_HEIGHT);
     }
 
     @Override
@@ -65,11 +85,10 @@ public final class MixedStripElement implements IElement {
     @Override
     public void render(GuiGraphics graphics, float x, float y, float w, float h) {
         // Jade hands elements the full remaining row width for stretchy content
-        // (see ProgressElement, which sizes itself from getCachedSize() instead
-        // of the passed w/h). Always draw at our own declared size so the strip
-        // stays a compact 72x8 pill instead of spanning the whole tooltip.
-        int width = Math.round(size.x);
-        int height = Math.round(size.y);
+        // (see ProgressElement, which sizes itself from getCachedSize()). Cap the
+        // drawn width at our own preferred size so the bar stays text-sized.
+        int width = Math.min(Math.round(size.x), Math.round(preferredWidth));
+        int height = Math.min(Math.round(size.y), Math.round(DEFAULT_HEIGHT));
         if (width <= 0 || height <= 0) {
             return;
         }
@@ -85,16 +104,19 @@ public final class MixedStripElement implements IElement {
             return;
         }
         graphics.fill(innerX, innerY, innerX + innerWidth, innerY + innerHeight, TRACK_COLOR);
-        if (total <= 0L) {
-            // Nothing stored: keep the empty track so the tooltip still shows the bar.
-            return;
+        if (total > 0L) {
+            drawSegments(graphics, innerX, innerY, innerWidth, innerHeight);
         }
+        drawText(graphics, left, top, width, height);
+    }
 
+    private void drawSegments(GuiGraphics graphics, int innerX, int innerY,
+                              int innerWidth, int innerHeight) {
         // The strip is a composition view: the segments always span the whole inner
         // width (proportional to each phase's share of `total`). The absolute
-        // total/capacity ratio is printed as text next to the strip instead of
-        // shrinking the fill to a sliver, which used to look like an empty grey box
-        // when a machine only held a few thousand mPU out of 48,000,000.
+        // total/capacity ratio lives in the embedded label instead of shrinking the
+        // fill to a sliver, which used to look like an empty grey box when a machine
+        // only held a few thousand mPU out of 48,000,000.
         int[] widths = new int[amounts.length];
         long cumulative = 0L;
         int previousEdge = 0;
@@ -136,6 +158,22 @@ public final class MixedStripElement implements IElement {
             graphics.fill(segmentX, innerY, segmentX + segmentWidth, innerY + innerHeight, colors[index]);
             segmentX += segmentWidth;
         }
+    }
+
+    private void drawText(GuiGraphics graphics, int x, int y, int width, int height) {
+        Font font = Minecraft.getInstance().font;
+        int textWidth = font.width(this.text);
+        if (textWidth <= 0) {
+            return;
+        }
+        float scale = Math.min(1.0F, (width - 4) / (float) textWidth);
+        float textX = x + width / 2.0F;
+        float textY = y + (height - 8.0F * scale) / 2.0F;
+        graphics.pose().pushPose();
+        graphics.pose().translate(textX, textY, 0.0F);
+        graphics.pose().scale(scale, scale, 1.0F);
+        graphics.drawString(font, this.text, -textWidth / 2, 0, TEXT_COLOR, true);
+        graphics.pose().popPose();
     }
 
     @Override

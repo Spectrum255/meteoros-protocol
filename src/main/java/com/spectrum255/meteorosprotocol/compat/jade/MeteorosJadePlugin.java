@@ -150,12 +150,9 @@ public final class MeteorosJadePlugin implements IWailaPlugin {
             }
 
             tooltip.add(new MixedStripElement(colors, stripAmounts, stripTotal, stripCapacity));
-            tooltip.add(Component.literal(num(stripTotal) + " / " + num(stripCapacity) + " mPU")
-                    .withStyle(ChatFormatting.GRAY));
 
-            if (accessor.getBlock() == MeteorosProtocol.PHASE_SEPARATOR.get()) {
-                tooltip.add(Component.translatable("jade.meteorosprotocol.loss", num(loss)));
-            }
+            // 0.0.24: 分离器已改为「粒子提纯机」，提纯无损耗（lastSeparatorLoss 恒 0），
+            // 因此不再向 tooltip 追加 loss 行——保留旧实现会让玩家看到一行无意义的 loss: 0。
         }
 
         private static long mixedAmount(CompoundTag root, MachineBlockEntity machine, Phase phase) {

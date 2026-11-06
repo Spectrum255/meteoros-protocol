@@ -82,6 +82,9 @@ public final class MeteorosCommands {
         source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
                 "  light: block %d + sky %d (darken %d) -> +%.1f T",
                 blockLight, skyLight, skyDarken, heat)), false);
+        source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                "  intake capture loss: %d%% (Thermion/Cryon/Aetheron lossy, Voltix/Aquantum lossless)",
+                Math.round(MachineBlockEntity.intakeCaptureLossRatio() * 100.0D))), false);
         return 1;
     }
 

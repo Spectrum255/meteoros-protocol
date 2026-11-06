@@ -49,6 +49,8 @@ public final class ParticleSelfTest {
         check(failures, "light heat", ParticleSelfTest::lightHeat);
         check(failures, "temperature", ParticleSelfTest::temperature);
         check(failures, "side config", ParticleSelfTest::sideConfig);
+        check(failures, "number formatting", ParticleSelfTest::numberFormatting);
+        check(failures, "intake loss and purifier", ParticleSelfTest::intakeAndPurifier);
         return failures;
     }
 
@@ -367,6 +369,21 @@ public final class ParticleSelfTest {
         require(MachineBlockEntity.PIPE_PHASE_MPU_PER_TRANSFER
                         == MachineBlockEntity.GENERATOR_INPUT_MPU_PER_TICK * 4L,
                 "a phase pipe must carry four generators");
+        require(MachineBlockEntity.ACTIVE_IO_BUDGET_PER_CALL > 25L,
+                "machine active I/O must no longer use the old 25 mPU transfer budget");
+        require(MachineBlockEntity.ACTIVE_IO_BUDGET_PER_CALL
+                        > MachineBlockEntity.PIPE_MPU_PER_TRANSFER,
+                "machine active I/O must move more per call than a pipe");
+        require(MachineBlockEntity.PORT_MPU_PER_TRANSFER
+                        > MachineBlockEntity.PIPE_MPU_PER_TRANSFER,
+                "a port must move more mixed mPU per call than a pipe");
+        require(MachineBlockEntity.PORT_PHASE_MPU_PER_TRANSFER
+                        > MachineBlockEntity.PIPE_PHASE_MPU_PER_TRANSFER,
+                "a port must move more per phase than a phase pipe");
+        require(MachineBlockEntity.INTAKE_MPU_PER_TICK == 25L
+                        && MachineBlockEntity.SEPARATOR_MAX_INPUT_MPU_PER_TICK == 25L
+                        && MachineBlockEntity.GENERATOR_INPUT_MPU_PER_TICK == 25L,
+                "processing rates must stay at 25 mPU/t after the transport cap change");
 
         require(MachineBlockEntity.mixedAccepted(2_000_000L, 900_000L) == 100_000L,
                 "mixed insert must accept only the remaining shared space");
@@ -691,6 +708,71 @@ public final class ParticleSelfTest {
                 "a paused generator must leave its tank untouched");
     }
 
+    /**
+     * Intake capture loss, impure-Aetheron sampler baseline and the purifier
+     * conversion. These rule the "why is my tower only storing 80%" behaviour and
+     * the impure-Aetheron economy, so they are pinned even though they need no
+     * level.
+     */
+    private static void intakeAndPurifier() {
+        // Capture loss only touches the heat/cold/aether phases.
+        long[] amounts = new long[phaseCount()];
+        for (int index = 0; index < amounts.length; index++) {
+            amounts[index] = 100L;
+        }
+        MachineBlockEntity.applyIntakeCaptureLoss(amounts);
+        long loss = Math.round(MachineBlockEntity.intakeCaptureLossRatio() * 100.0D);
+        long kept = 100L - loss;
+        require(amounts[Phase.THERMION.index()] == kept, "Thermion must lose the capture fraction");
+        require(amounts[Phase.CRYON.index()] == kept, "Cryon must lose the capture fraction");
+        require(amounts[Phase.AETHERON.index()] == kept, "Aetheron must lose the capture fraction");
+        require(amounts[Phase.IMPURE_AETHERON.index()] == kept,
+                "impure Aetheron must lose the capture fraction");
+        require(amounts[Phase.VOLTIX_POS.index()] == 100L,
+                "positive Voltix must be captured losslessly");
+        require(amounts[Phase.VOLTIX_NEG.index()] == 100L,
+                "negative Voltix must be captured losslessly");
+        require(amounts[Phase.AQUANTUM.index()] == 100L,
+                "Aquantum must be captured losslessly");
+
+        // Impure Aetheron sampler: 10% of ambient aetheron, times the 0.25 upgrade factor.
+        PhaseSampler sampler = PhaseSamplers.sampler(Phase.IMPURE_AETHERON);
+        require(sampler != null, "impure Aetheron must register a sampler");
+        FieldSample base = new FieldSample(0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 10.0F);
+        float sampled = sampler.sample(null, BlockPos.ZERO, base);
+        require(near(sampled, 10.0F * 0.10F * 0.25F),
+                "the impure Aetheron sampler must use the 0.10 x 0.25 baseline");
+
+        // Purifier: 25 impure -> 25 pure + 5 Thermion + 5 Cryon, and no-material
+        // ticks must not spend energy.
+        MachineBlockEntity purifier = new MachineBlockEntity(
+                BlockPos.ZERO, MeteorosProtocol.PHASE_SEPARATOR.get().defaultBlockState());
+        purifier.receiveEnergy(1_000, false);
+        require(purifier.phaseStorage().insert(Phase.IMPURE_AETHERON, 25L, false) == 25L,
+                "the purifier must accept impure Aetheron");
+        long energyBefore = purifier.energy();
+        require(purifier.runPurifierTickForSelfTest(),
+                "the purifier must run with 25 mPU of impure Aetheron");
+        require(purifier.energy() == energyBefore - MachineBlockEntity.SEPARATOR_FE_PER_TICK,
+                "a purifier tick must spend its 25 FE");
+        require(purifier.phaseStorage().getAmount(Phase.IMPURE_AETHERON) == 0L,
+                "the purifier must consume its impure Aetheron");
+        require(purifier.phaseStorage().getAmount(Phase.AETHERON) == 25L,
+                "the purifier must return 25 mPU of pure Aetheron");
+        require(purifier.phaseStorage().getAmount(Phase.THERMION) == 5L,
+                "the purifier must return 5 mPU of Thermion");
+        require(purifier.phaseStorage().getAmount(Phase.CRYON) == 5L,
+                "the purifier must return 5 mPU of Cryon");
+        long idleEnergy = purifier.energy();
+        require(!purifier.runPurifierTickForSelfTest(),
+                "the purifier must idle when it has no impure Aetheron");
+        require(purifier.energy() == idleEnergy,
+                "an idle purifier tick must not spend energy");
+        require(purifier.relevantPhases().equals(List.of(
+                        Phase.IMPURE_AETHERON, Phase.AETHERON, Phase.THERMION, Phase.CRYON)),
+                "the purifier GUI must only show its four relevant phases");
+    }
+
     private static boolean near(float actual, float expected) {
         return Math.abs(actual - expected) < 1.0E-4F;
     }
@@ -705,6 +787,21 @@ public final class ParticleSelfTest {
             total += value;
         }
         return total;
+    }
+
+    private static void numberFormatting() {
+        require("0 mPU".equals(ParticleFormat.formatMPU(0L)), "formatMPU(0) should be \"0 mPU\"");
+        require("999 mPU".equals(ParticleFormat.formatMPU(999L)), "formatMPU(999) should be \"999 mPU\"");
+        require("1 kPU".equals(ParticleFormat.formatMPU(1_000L)), "formatMPU(1000) should be \"1 kPU\"");
+        require("1.5 kPU".equals(ParticleFormat.formatMPU(1_500L)), "formatMPU(1500) should be \"1.5 kPU\"");
+        require("1 MPU".equals(ParticleFormat.formatMPU(1_000_000L)),
+                "formatMPU(1000000) should be \"1 MPU\"");
+        require("23.8 MPU".equals(ParticleFormat.formatMPU(23_750_000L)),
+                "formatMPU(23750000) should be \"23.8 MPU\"");
+        require("1 MFE".equals(ParticleFormat.formatFE(999_980L)),
+                "formatFE(999980) should promote to \"1 MFE\", got " + ParticleFormat.formatFE(999_980L));
+        require("12,345,678 mPU".equals(ParticleFormat.formatPlain(12_345_678L, "mPU")),
+                "formatPlain should keep thousands separators");
     }
 
     private static float sum(float[] values) {

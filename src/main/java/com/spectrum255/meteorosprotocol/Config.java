@@ -201,6 +201,27 @@ public final class Config {
                 .defineInRange("cryonShare", 0.5, 0.0, 1.0);
         BUILDER.pop();
 
+        BUILDER.comment("Intake tower capture: the tower loses a fraction of the heat, cold and"
+                        + " aether phases it pulls in; charge and aqueous phases are lossless.")
+                .push("intake");
+        PF_INTAKE_CAPTURE_LOSS = BUILDER
+                .comment("Fraction of captured Thermion/Cryon/Aetheron/Impure Aetheron lost"
+                        + " (default 0.20).")
+                .defineInRange("captureLoss", 0.20, 0.0, 0.9);
+        BUILDER.pop();
+
+        BUILDER.comment("Impure Aetheron sampling: ambient Aetheron decays into its impure form at a"
+                        + " small rate, scaled by the future machine upgrade multiplier.")
+                .push("impureAetheron");
+        PF_IMPURE_SAMPLER_RATIO = BUILDER
+                .comment("Base fraction of ambient Aetheron that becomes impure Aetheron (default 0.10).")
+                .defineInRange("samplerRatio", 0.10, 0.0, 1.0);
+        PF_IMPURE_UPGRADE_FACTOR = BUILDER
+                .comment("Upgrade multiplier on the impure Aetheron sampler (default 0.25; a future"
+                        + " machine upgrade raises it to 1.0).")
+                .defineInRange("upgradeFactor", 0.25, 0.0, 1.0);
+        BUILDER.pop();
+
         BUILDER.comment("Temperature (primary): biome temperature plus nearby heat sources/cold blocks"
                         + " drive Thermion and Cryon.")
                 .push("temperature");
@@ -307,6 +328,13 @@ public final class Config {
     public static final ModConfigSpec.DoubleValue PF_LIGHT_HEAT_ARTIFICIAL;
     public static final ModConfigSpec.DoubleValue PF_LIGHT_HEAT_SKY;
     public static final ModConfigSpec.DoubleValue PF_LIGHT_HEAT_CRYON_SHARE;
+
+    // Intake tower capture
+    public static final ModConfigSpec.DoubleValue PF_INTAKE_CAPTURE_LOSS;
+
+    // Impure Aetheron sampling
+    public static final ModConfigSpec.DoubleValue PF_IMPURE_SAMPLER_RATIO;
+    public static final ModConfigSpec.DoubleValue PF_IMPURE_UPGRADE_FACTOR;
 
     // Temperature
     public static final ModConfigSpec.BooleanValue PF_TEMP_ENABLED;

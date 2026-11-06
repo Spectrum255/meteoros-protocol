@@ -63,8 +63,9 @@ public final class IntakeLayout {
     /** Horizontal FE bar outer frame (inner 58 x 4). */
     public static final int FE_X = 8;
     public static final int FE_Y = 72;
-    public static final int FE_WIDTH = 60;
-    public static final int FE_HEIGHT = 6;
+    public static final int FE_WIDTH = 96;
+    /** Eight pixels so the energy readout can sit inside the bar. */
+    public static final int FE_HEIGHT = 8;
 
     /** Item slot positions (top-left of the 16 x 16 item cell). */
     public static final int FILTER_SLOT_X = 76;

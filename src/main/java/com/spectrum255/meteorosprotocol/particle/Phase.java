@@ -42,7 +42,7 @@ public final class Phase {
                     ResourceLocation.fromNamespaceAndPath(CORE_NAMESPACE, "impure_aetheron"))
             .color(0xB9BDC0)
             .atmospheric(false)
-            .sampler((level, pos, base) -> base.aetheron() * 0.10F)
+            .sampler(PhaseSamplers.impureAetheron())
             .build();
 
     private static final List<Phase> CORE_PHASES =

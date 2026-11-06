@@ -1,5 +1,6 @@
 package com.spectrum255.meteorosprotocol.machine;
 
+import com.spectrum255.meteorosprotocol.Config;
 import com.spectrum255.meteorosprotocol.MeteorosProtocol;
 import com.spectrum255.meteorosprotocol.menu.IntakeMenu;
 import com.spectrum255.meteorosprotocol.menu.MachineStatusMenu;
@@ -19,6 +20,7 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.Mth;
 import net.minecraft.world.ContainerHelper;
 import net.minecraft.world.Containers;
 import net.minecraft.world.MenuProvider;
@@ -39,13 +41,16 @@ import org.jetbrains.annotations.Nullable;
  * v2 S4 machine storage. All particle amounts are milli-PU (mPU, 1 PU = 1000
  * mPU); energy is FE.
  *
- * <p>The mixed buffer ({@link #mixed}) and the six phase tanks ({@link #phases})
+ * <p>The mixed buffer ({@link #mixed}) and the phase tanks ({@link #phases})
  * are separate stores. The block entity is the mixed buffer for the
  * {@code MIXED_STORAGE} capability; the phase tanks are exposed through
- * {@link #phaseStorage()}. Recipes run every tick: 25 mPU intake, a 25 mPU
- * separator input with a 0.95 carry, and 25 T -> 25 C generation.</p>
+ * {@link #phaseStorage()}. Recipes run every tick: 25 mPU intake (with a fixed
+ * capture loss on the heat/cold/aether phases), 25 impure Aetheron -> pure
+ * Aetheron + impurities in the purifier (formerly phase separator), and
+ * 25 T -> 500 FE generation.</p>
  */
 public class MachineBlockEntity extends BlockEntity implements MixedStorage, MenuProvider, IEnergyStorage {
+    // ---- processing rates (gameplay): how fast a machine converts/produces ----
     /** Per-tick intake volume. */
     public static final long INTAKE_MPU_PER_TICK = 25L;
     public static final long INTAKE_FE_PER_TICK = 15L;
@@ -69,6 +74,13 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
     /** How long the generator's "active" back texture stays on after a successful tick. */
     private static final int GENERATOR_ACTIVE_HOLD_TICKS = 40;
 
+    /** Phases the intake tower loses part of on capture; charge and aqueous are lossless. */
+    private static final List<Phase> LOSSY_INTAKE_PHASES = List.of(
+            Phase.THERMION, Phase.CRYON, Phase.AETHERON, Phase.IMPURE_AETHERON);
+    /** Fallback when the config is unloaded (e.g. very early in startup). */
+    private static final double DEFAULT_INTAKE_CAPTURE_LOSS = 0.20D;
+
+    // ---- throughput caps (transport): only upper bounds on how much moves per call ----
     /**
      * Mixed pipe transfer budget per active pipe tick (every 5 ticks):
      * 500 / 5 t = 100 mPU/t, four times a tower's capture rate.
@@ -76,18 +88,23 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
     public static final long PIPE_MPU_PER_TRANSFER = 500L;
     /**
      * Per-phase pipe budget per active pipe tick: 100 / 5 t = 20 mPU/t for each
-     * of the six phases (120 mPU/t when every phase is moving).
+     * phase. Pipes stay deliberately slower than a machine's own active I/O.
      */
     public static final long PIPE_PHASE_MPU_PER_TRANSFER = 100L;
     private static final long PIPE_INTERVAL = 5L;
 
     /**
-     * Small per-phase budget used by the machines' own active I/O (generator
-     * pull, separator push) once every 5 ticks: 25 / 5 t = 5 mPU/t per phase.
-     * The intake tower uses the larger pipe budgets for its output because it
-     * is the source of the whole production chain.
+     * Per-call budget of a machine's own active I/O (one call every 5 ticks).
+     * This is only an upper bound on transport: the amount actually moved is
+     * still limited by what the source holds and what the destination accepts,
+     * so no particles are ever created.
      */
-    private static final long ACTIVE_IO_SMALL_BUDGET = 25L;
+    public static final long ACTIVE_IO_BUDGET_PER_CALL = 5_000L;
+
+    /** Per-call mixed budget of the configurable port (one call every 5 ticks). */
+    public static final long PORT_MPU_PER_TRANSFER = 5_000L;
+    /** Per-phase per-call budget of the configurable port (one call every 5 ticks). */
+    public static final long PORT_PHASE_MPU_PER_TRANSFER = 1_000L;
 
     /** Shared total capacity of the mixed buffer (1,000 PU). */
     public static final long MIXED_CAPACITY = 1_000_000L;
@@ -141,6 +158,8 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
     private long separatorCarry;
     private long lastSeparatorLoss;
     private boolean separatorInsertWarningLogged;
+    /** Purifier overflow that neither the phase tanks nor the mixed buffer could take. */
+    private boolean purifierDiscardWarningLogged;
     /** Last composition bitmask sent to clients; MIN_VALUE means never sent. */
     private long lastCompositionSignature = Long.MIN_VALUE;
 
@@ -353,6 +372,18 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
 
     public static void serverTick(ServerLevel level, BlockPos pos, BlockState state, MachineBlockEntity machine) {
         Block block = state.getBlock();
+        // Every machine that owns phase tanks settles its mixed buffer before its
+        // own tick, so particles pushed in by pipes/canisters reach the matching
+        // tank instead of sitting in the buffer forever. Pipes have no tanks,
+        // weather blocks have no particle logic, and the generator keeps its own
+        // per-tick settle below (don't settle twice).
+        if (block != MeteorosProtocol.PARTICLE_PIPE.get()
+                && block != MeteorosProtocol.WEATHER_STATION.get()
+                && block != MeteorosProtocol.WEATHER_TANK.get()
+                && block != MeteorosProtocol.THERMAL_GENERATOR.get()
+                && machine.progress % PIPE_INTERVAL == 0L) {
+            machine.settleMixedBuffer();
+        }
         if (block == MeteorosProtocol.PARTICLE_INTAKE.get()) {
             machine.tickIntake(level, pos);
         } else if (block == MeteorosProtocol.PARTICLE_PIPE.get()) {
@@ -450,6 +481,9 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
             }
         }
         long[] input = ParticleMath.amountsFromShares(volume, shares);
+        // Fixed capture loss: the tower only recovers part of the heat, cold and
+        // aether phases; charge/aqueous phases are captured losslessly.
+        applyIntakeCaptureLoss(input);
         long moved = 0L;
         for (Phase phase : Phase.all()) {
             moved += insert(phase, input[phase.index()], false);
@@ -474,6 +508,37 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         int index = Phase.AETHERON.index();
         if (shares != null && index >= 0 && index < shares.length) {
             shares[index] = 0.0F;
+        }
+    }
+
+    /**
+     * Applies the intake tower's fixed capture loss to the phases it handles
+     * lossily: Thermion, Cryon, Aetheron and impure Aetheron. Charge (V+ / V-)
+     * and aqueous (Aq) phases pass through untouched.
+     *
+     * <p>The loss is applied to the resulting <em>amounts</em>, not to the shares
+     * fed into {@link ParticleMath#amountsFromShares}: that helper normalises its
+     * shares, so scaling shares would change nothing but the ratios.</p>
+     */
+    public static void applyIntakeCaptureLoss(long[] amounts) {
+        if (amounts == null) {
+            return;
+        }
+        double keep = 1.0D - intakeCaptureLossRatio();
+        for (Phase phase : LOSSY_INTAKE_PHASES) {
+            int index = phase.index();
+            if (index >= 0 && index < amounts.length) {
+                amounts[index] = Math.max(0L, (long) Math.floor(amounts[index] * keep));
+            }
+        }
+    }
+
+    /** Configured fraction of the lossy phases lost on intake capture (default 0.20). */
+    public static double intakeCaptureLossRatio() {
+        try {
+            return Mth.clamp(Config.PF_INTAKE_CAPTURE_LOSS.get(), 0.0D, 0.9D);
+        } catch (RuntimeException exception) {
+            return DEFAULT_INTAKE_CAPTURE_LOSS;
         }
     }
 
@@ -668,13 +733,17 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
      *
      * <p>Direction table:</p>
      * <ul>
-     *   <li>generator: pull up to 25 mPU Thermion (phase tanks first, mixed buffer
-     *       second); its Cryon output is still handled in {@code tickGenerator};</li>
-     *   <li>separator: pull up to 25 mPU mixed while below 25% buffered, push up to
-     *       25 mPU of each stored phase;</li>
+     *   <li>generator: pull up to {@link #ACTIVE_IO_BUDGET_PER_CALL} mPU Thermion
+     *       (phase tanks first, mixed buffer second); its byproduct output is
+     *       still handled in {@code tickGenerator};</li>
+     *   <li>separator: pull up to {@link #ACTIVE_IO_BUDGET_PER_CALL} mPU mixed
+     *       while below 25% buffered, push up to the same budget across its
+     *       stored phases (equal shares, leftover reused);</li>
      *   <li>intake tower: push up to 500 mPU mixed and 100 mPU of each phase;</li>
      *   <li>weather blocks and pipes: no active I/O.</li>
      * </ul>
+     * <p>Budgets are upper bounds only: the actual transfer is clamped by the
+     * source stock and the destination's remaining space.</p>
      */
     private void tickActiveIo(ServerLevel level, BlockPos pos) {
         Block block = getBlockState().getBlock();
@@ -682,20 +751,16 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
             // A full FE buffer pauses fuel intake: do not drain the line while
             // there is no room for the energy that Thermion would produce.
             if (energy <= ENERGY_CAPACITY - GENERATOR_FE_PER_TICK) {
-                long pulled = pullPhaseFromNeighbours(level, Phase.THERMION, ACTIVE_IO_SMALL_BUDGET, false);
-                if (pulled < ACTIVE_IO_SMALL_BUDGET) {
-                    pullPhaseFromNeighbours(level, Phase.THERMION, ACTIVE_IO_SMALL_BUDGET - pulled, true);
+                long pulled = pullPhaseFromNeighbours(level, Phase.THERMION, ACTIVE_IO_BUDGET_PER_CALL, false);
+                if (pulled < ACTIVE_IO_BUDGET_PER_CALL) {
+                    pullPhaseFromNeighbours(level, Phase.THERMION, ACTIVE_IO_BUDGET_PER_CALL - pulled, true);
                 }
             }
         } else if (block == MeteorosProtocol.PHASE_SEPARATOR.get()) {
             if (getTotal() < MIXED_CAPACITY / 4L) {
-                pullMixedFromNeighbours(level, ACTIVE_IO_SMALL_BUDGET);
+                pullMixedFromNeighbours(level, ACTIVE_IO_BUDGET_PER_CALL);
             }
-            for (Phase phase : Phase.all()) {
-                if (phases[phase.index()] > 0L) {
-                    pushPhaseToNeighbours(level, phase, ACTIVE_IO_SMALL_BUDGET);
-                }
-            }
+            pushStoredPhasesToNeighbours(level, ACTIVE_IO_BUDGET_PER_CALL);
         } else if (block == MeteorosProtocol.PARTICLE_INTAKE.get()) {
             if (getTotal() > 0L) {
                 pushMixedToNeighbours(level, PIPE_MPU_PER_TRANSFER);
@@ -918,6 +983,44 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         return moved;
     }
 
+    /**
+     * Pushes every stored phase into adjacent phase tanks, sharing {@code budget}
+     * across the phases that currently hold something. The first pass uses an
+     * equal share; a second pass gives the leftover budget to phases that still
+     * have stock, so a single full phase is not stranded by the split.
+     */
+    private void pushStoredPhasesToNeighbours(ServerLevel level, long budget) {
+        int stocked = 0;
+        for (Phase phase : Phase.all()) {
+            if (phases[phase.index()] > 0L) {
+                stocked++;
+            }
+        }
+        if (stocked == 0 || budget <= 0L) {
+            return;
+        }
+        long remaining = budget;
+        long perPhase = Math.max(1L, budget / stocked);
+        for (Phase phase : Phase.all()) {
+            if (remaining <= 0L) {
+                return;
+            }
+            if (phases[phase.index()] <= 0L) {
+                continue;
+            }
+            remaining -= pushPhaseToNeighbours(level, phase, Math.min(perPhase, remaining));
+        }
+        for (Phase phase : Phase.all()) {
+            if (remaining <= 0L) {
+                return;
+            }
+            if (phases[phase.index()] <= 0L) {
+                continue;
+            }
+            remaining -= pushPhaseToNeighbours(level, phase, remaining);
+        }
+    }
+
     /** Pushes up to {@code budget} mPU of the mixed buffer into adjacent mixed storages. */
     private long pushMixedToNeighbours(ServerLevel level, long budget) {
         long moved = 0L;
@@ -1116,10 +1219,10 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
             boolean hasMixed = getTotal() > 0L;
             if (mixedMode == SideMode.OUT || (mixedMode == SideMode.BOTH && hasMixed)) {
                 if (hasMixed) {
-                    pushMixedTo(mixedTarget, PIPE_MPU_PER_TRANSFER);
+                    pushMixedTo(mixedTarget, PORT_MPU_PER_TRANSFER);
                 }
             } else if (mixedMode == SideMode.IN || (mixedMode == SideMode.BOTH && !hasMixed)) {
-                pullMixedFrom(mixedTarget, PIPE_MPU_PER_TRANSFER);
+                pullMixedFrom(mixedTarget, PORT_MPU_PER_TRANSFER);
             }
         }
 
@@ -1128,24 +1231,91 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
             boolean hasPhase = !phaseStorage.isEmpty();
             if (phaseMode == SideMode.OUT || (phaseMode == SideMode.BOTH && hasPhase)) {
                 if (phaseTarget != null && hasPhase) {
-                    for (Phase phase : Phase.all()) {
-                        if (phases[phase.index()] > 0L) {
-                            pushPhaseTo(phaseTarget, phase, PIPE_PHASE_MPU_PER_TRANSFER);
-                        }
-                    }
+                    pushStoredPhasesTo(phaseTarget, PORT_PHASE_MPU_PER_TRANSFER);
                 }
             } else if (phaseMode == SideMode.IN || (phaseMode == SideMode.BOTH && !hasPhase)) {
                 if (phaseTarget != null) {
-                    for (Phase phase : Phase.all()) {
-                        pullPhaseFromStorage(phaseTarget, phase, PIPE_PHASE_MPU_PER_TRANSFER);
-                    }
+                    pullPhasesFrom(phaseTarget, PORT_PHASE_MPU_PER_TRANSFER);
                 } else if (mixedTarget != null) {
-                    for (Phase phase : Phase.all()) {
-                        pullPhaseFromMixed(mixedTarget, phase, PIPE_PHASE_MPU_PER_TRANSFER);
-                    }
+                    pullPhasesFromMixed(mixedTarget, PORT_PHASE_MPU_PER_TRANSFER);
                 }
             }
         }
+    }
+
+    /** Pushes stored phases into one target, sharing and then reusing the budget. */
+    private void pushStoredPhasesTo(PhaseStorage target, long budget) {
+        int stocked = stockedPhaseCount();
+        if (stocked == 0 || budget <= 0L) {
+            return;
+        }
+        long remaining = budget;
+        long perPhase = Math.max(1L, budget / stocked);
+        for (Phase phase : Phase.all()) {
+            if (remaining <= 0L) {
+                return;
+            }
+            if (phases[phase.index()] <= 0L) {
+                continue;
+            }
+            remaining -= pushPhaseTo(target, phase, Math.min(perPhase, remaining));
+        }
+        for (Phase phase : Phase.all()) {
+            if (remaining <= 0L) {
+                return;
+            }
+            if (phases[phase.index()] <= 0L) {
+                continue;
+            }
+            remaining -= pushPhaseTo(target, phase, remaining);
+        }
+    }
+
+    /** Pulls every phase from one phase storage, sharing and then reusing the budget. */
+    private void pullPhasesFrom(PhaseStorage source, long budget) {
+        long remaining = budget;
+        long perPhase = Math.max(1L, budget / Math.max(1, Phase.all().size()));
+        for (Phase phase : Phase.all()) {
+            if (remaining <= 0L) {
+                return;
+            }
+            remaining -= pullPhaseFromStorage(source, phase, Math.min(perPhase, remaining));
+        }
+        for (Phase phase : Phase.all()) {
+            if (remaining <= 0L) {
+                return;
+            }
+            remaining -= pullPhaseFromStorage(source, phase, remaining);
+        }
+    }
+
+    /** Pulls every phase out of one mixed storage, sharing and then reusing the budget. */
+    private void pullPhasesFromMixed(MixedStorage source, long budget) {
+        long remaining = budget;
+        long perPhase = Math.max(1L, budget / Math.max(1, Phase.all().size()));
+        for (Phase phase : Phase.all()) {
+            if (remaining <= 0L) {
+                return;
+            }
+            remaining -= pullPhaseFromMixed(source, phase, Math.min(perPhase, remaining));
+        }
+        for (Phase phase : Phase.all()) {
+            if (remaining <= 0L) {
+                return;
+            }
+            remaining -= pullPhaseFromMixed(source, phase, remaining);
+        }
+    }
+
+    /** Number of phase tanks currently holding particles. */
+    private int stockedPhaseCount() {
+        int stocked = 0;
+        for (Phase phase : Phase.all()) {
+            if (phases[phase.index()] > 0L) {
+                stocked++;
+            }
+        }
+        return stocked;
     }
 
     private long pushPipeContents(MixedStorage target) {
@@ -1253,19 +1423,56 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         }
     }
 
+    /**
+     * Particle purifier (the old phase separator): consumes impure Aetheron and
+     * splits it back into pure Aetheron plus the impurities the tower lost on
+     * capture. One operation takes up to
+     * {@link #SEPARATOR_MAX_INPUT_MPU_PER_TICK} mPU of impure Aetheron and yields
+     * the same amount of pure Aetheron plus a fifth of that amount each of
+     * Thermion and Cryon (the 20% capture loss being returned). When the tank
+     * holds less than one full operation the outputs scale down with it; with no
+     * impure Aetheron at all the machine costs no energy.
+     */
     private void tickSeparator() {
         lastSeparatorLoss = 0L;
-        if (energy < SEPARATOR_FE_PER_TICK) {
+        int impureIndex = Phase.IMPURE_AETHERON.index();
+        long available = impureIndex >= 0 && impureIndex < phases.length ? phases[impureIndex] : 0L;
+        if (available <= 0L || energy < SEPARATOR_FE_PER_TICK) {
             return;
         }
-        // The 95% conversion lives in separateMixedIntoTanks so the intake tower
-        // can run the same step without an adjacent separator (it passes 100%,
-        // lossless).
-        long processed = separateMixedIntoTanks(SEPARATOR_MAX_INPUT_MPU_PER_TICK);
-        if (processed <= 0L) {
-            return;
+        long input = Math.min(SEPARATOR_MAX_INPUT_MPU_PER_TICK, available);
+        long thermionOut = input / 5L;
+        long cryonOut = input / 5L;
+        phases[impureIndex] -= input;
+
+        long discarded = givePurifiedPhase(Phase.AETHERON, input)
+                + givePurifiedPhase(Phase.THERMION, thermionOut)
+                + givePurifiedPhase(Phase.CRYON, cryonOut);
+        if (discarded > 0L && !purifierDiscardWarningLogged) {
+            purifierDiscardWarningLogged = true;
+            MeteorosProtocol.LOGGER.warn(
+                    "Purifier at {} discarded {} mPU because its phase tanks and mixed buffer are full",
+                    getBlockPos(), discarded
+            );
         }
         energy -= SEPARATOR_FE_PER_TICK;
+    }
+
+    /**
+     * Writes purifier output into {@code phase}'s tank; whatever does not fit
+     * overflows into the mixed buffer, and only what is left after that is
+     * discarded. Returns the discarded amount.
+     */
+    private long givePurifiedPhase(Phase phase, long amount) {
+        if (amount <= 0L) {
+            return 0L;
+        }
+        long accepted = addPhaseInternal(phase, amount);
+        long remainder = amount - accepted;
+        if (remainder > 0L) {
+            remainder -= insertMixedInternal(phase, remainder);
+        }
+        return Math.max(0L, remainder);
     }
 
     /**
@@ -1363,6 +1570,17 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         return tickGenerator();
     }
 
+    /**
+     * Runs one purifier (phase separator) tick for the self-test. The conversion
+     * is level-independent: outputs go to the phase tanks first, then the mixed
+     * buffer; a machine without a level simply has no neighbours to warn about.
+     */
+    public boolean runPurifierTickForSelfTest() {
+        long before = energy;
+        tickSeparator();
+        return energy < before;
+    }
+
     /** {@code (input * 95 + carry) / 100}; the separator's output this tick. */
     public static long separatorOutput(long input, long carry) {
         if (input <= 0L) {
@@ -1431,8 +1649,10 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         }
         if (block == MeteorosProtocol.PHASE_SEPARATOR.get()) {
             return Component.literal(String.format(Locale.ROOT,
-                    "FE %d/%d | %d mPU | loss %d",
-                    energy, ENERGY_CAPACITY, getTotal(), lastSeparatorLoss));
+                    "FE %d/%d | Ae* %d | Ae %d",
+                    energy, ENERGY_CAPACITY,
+                    phases[Phase.IMPURE_AETHERON.index()],
+                    phases[Phase.AETHERON.index()]));
         }
         if (block == MeteorosProtocol.THERMAL_GENERATOR.get()) {
             return Component.literal(String.format(Locale.ROOT,
@@ -1757,14 +1977,18 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
     /**
      * Phases this machine can actually consume or produce. The generator only
      * burns Thermion and (once upgraded) would produce impure Aetheron, so its
-     * gauges currently show Thermion alone; the separator handles the whole
-     * mixed buffer, and the weather blocks have no particle logic yet. Used by
-     * the shared status screen to avoid drawing irrelevant gauges.
+     * gauges currently show Thermion alone; the purifier (formerly phase
+     * separator) takes impure Aetheron and returns pure Aetheron, Thermion and
+     * Cryon; weather blocks have no particle logic yet. Used by the shared status
+     * screen to avoid drawing irrelevant gauges.
      */
     public List<Phase> relevantPhases() {
         Block block = getBlockState().getBlock();
         if (block == MeteorosProtocol.THERMAL_GENERATOR.get()) {
             return List.of(Phase.THERMION);
+        }
+        if (block == MeteorosProtocol.PHASE_SEPARATOR.get()) {
+            return List.of(Phase.IMPURE_AETHERON, Phase.AETHERON, Phase.THERMION, Phase.CRYON);
         }
         if (block == MeteorosProtocol.WEATHER_STATION.get() || block == MeteorosProtocol.WEATHER_TANK.get()) {
             return List.of();

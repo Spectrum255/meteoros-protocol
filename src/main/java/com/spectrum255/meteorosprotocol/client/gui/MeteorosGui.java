@@ -243,6 +243,41 @@ public final class MeteorosGui {
     }
 
     /**
+     * Same as {@link #phaseBarH} but with a centred, shadowed label inside the
+     * bar (used by the energy meters so the numbers sit in the bar like vanilla
+     * {@code ProgressElement}s instead of taking a separate tooltip line). The
+     * text is scaled down if it is wider than the bar.
+     */
+    public static void barHWithText(GuiGraphics g, Font font, int x, int y, int w, int h,
+                                    float level, int fillArgb, int emptyArgb, Component text) {
+        phaseBarH(g, x, y, w, h, level, fillArgb, emptyArgb);
+        centeredText(g, font, text, x, y, w, h);
+    }
+
+    /**
+     * Draws {@code text} centred in the given rectangle, shrinking it with the
+     * pose stack when the label is wider than the rectangle allows.
+     */
+    public static void centeredText(GuiGraphics g, Font font, Component text,
+                                    int x, int y, int w, int h) {
+        if (text == null || w <= 0 || h <= 0) {
+            return;
+        }
+        int textWidth = font.width(text);
+        if (textWidth <= 0) {
+            return;
+        }
+        float scale = Math.min(1.0f, (w - 4) / (float) textWidth);
+        float textX = x + w / 2.0f;
+        float textY = y + (h - 8.0f * scale) / 2.0f;
+        g.pose().pushPose();
+        g.pose().translate(textX, textY, 0.0f);
+        g.pose().scale(scale, scale, 1.0f);
+        g.drawString(font, text, -textWidth / 2, 0, 0xFFFFFFFF, true);
+        g.pose().popPose();
+    }
+
+    /**
      * Horizontal composition strip: segments proportional to {@code amounts},
      * the last non-empty phase takes the rounding remainder so the total width
      * never drifts. The caller owns the frame/background.
