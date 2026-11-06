@@ -9,6 +9,7 @@ import java.util.List;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -74,6 +75,18 @@ public class InfiniteParticleCanisterItem extends Item {
     @Override
     public InteractionResult useOn(UseOnContext context) {
         Level level = context.getLevel();
+        if (level.isClientSide) {
+            return InteractionResult.SUCCESS;
+        }
+        // Sneaking skips the block's useWithoutItem path in 1.21.1, so the item also
+        // owns the sneak shortcut: open the machine menu instead of injecting.
+        if (context.getPlayer() != null && context.getPlayer().isShiftKeyDown()
+                && level.getBlockEntity(context.getClickedPos()) instanceof MachineBlockEntity menuMachine) {
+            if (context.getPlayer() instanceof ServerPlayer serverPlayer) {
+                serverPlayer.openMenu(menuMachine);
+            }
+            return InteractionResult.SUCCESS;
+        }
         Phase selected = getSelectedPhase(context.getItemInHand());
         if (selected == null) {
             if (!level.isClientSide) {
@@ -82,9 +95,6 @@ public class InfiniteParticleCanisterItem extends Item {
                         true
                 );
             }
-            return InteractionResult.SUCCESS;
-        }
-        if (level.isClientSide) {
             return InteractionResult.SUCCESS;
         }
 

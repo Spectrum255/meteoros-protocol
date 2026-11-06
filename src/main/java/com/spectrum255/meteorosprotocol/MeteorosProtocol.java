@@ -72,12 +72,13 @@ public class MeteorosProtocol {
     public static final DeferredBlock<Block> WEATHER_STATION=BLOCKS.register("weather_station",()->new MachineBlock(MACHINE));
     public static final DeferredBlock<Block> WEATHER_TANK=BLOCKS.register("weather_tank",()->new MachineBlock(MACHINE));
     public static final DeferredBlock<Block> PARTICLE_PIPE=BLOCKS.register("particle_pipe",()->new ParticlePipeBlock(MACHINE));
+    public static final DeferredBlock<Block> PARTICLE_PORT=BLOCKS.register("particle_port",()->new MachineBlock(MACHINE));
     public static final DeferredBlock<Block> PORCELAIN_SHELL=BLOCKS.register("porcelain_shell",()->new Block(BlockBehaviour.Properties.of().mapColor(MapColor.QUARTZ).strength(1.5f).sound(SoundType.STONE)));
     private static final BlockBehaviour.Properties TEST_BLOCK=BlockBehaviour.Properties.of().mapColor(MapColor.COLOR_ORANGE).strength(3.0f).sound(SoundType.METAL);
     public static final DeferredBlock<Block> INFINITE_ENERGY=BLOCKS.register("infinite_energy",()->new CreativeEnergyBlock(TEST_BLOCK));
     public static final DeferredBlock<Block> INFINITE_PARTICLE_CELL=BLOCKS.register("infinite_particle_cell",()->new CreativeParticleBlock(TEST_BLOCK));
     public static final DeferredRegister<BlockEntityType<?>> BLOCK_ENTITY_TYPES=DeferredRegister.create(Registries.BLOCK_ENTITY_TYPE,MODID);
-    public static final DeferredHolder<BlockEntityType<?>,BlockEntityType<MachineBlockEntity>> MACHINE_BLOCK_ENTITY=BLOCK_ENTITY_TYPES.register("machine",()->BlockEntityType.Builder.of(MachineBlockEntity::new, THERMAL_GENERATOR.get(), PARTICLE_INTAKE.get(), PHASE_SEPARATOR.get(), WEATHER_STATION.get(), WEATHER_TANK.get(), PARTICLE_PIPE.get()).build(null));
+    public static final DeferredHolder<BlockEntityType<?>,BlockEntityType<MachineBlockEntity>> MACHINE_BLOCK_ENTITY=BLOCK_ENTITY_TYPES.register("machine",()->BlockEntityType.Builder.of(MachineBlockEntity::new, THERMAL_GENERATOR.get(), PARTICLE_INTAKE.get(), PHASE_SEPARATOR.get(), WEATHER_STATION.get(), WEATHER_TANK.get(), PARTICLE_PIPE.get(), PARTICLE_PORT.get()).build(null));
     public static final DeferredHolder<BlockEntityType<?>,BlockEntityType<CreativeEnergyBlockEntity>> CREATIVE_ENERGY_BLOCK_ENTITY=BLOCK_ENTITY_TYPES.register("creative_energy",()->BlockEntityType.Builder.of(CreativeEnergyBlockEntity::new, INFINITE_ENERGY.get()).build(null));
     public static final DeferredHolder<BlockEntityType<?>,BlockEntityType<CreativeParticleBlockEntity>> CREATIVE_PARTICLE_BLOCK_ENTITY=BLOCK_ENTITY_TYPES.register("creative_particle",()->BlockEntityType.Builder.of(CreativeParticleBlockEntity::new, INFINITE_PARTICLE_CELL.get()).build(null));
     public static final DeferredItem<BlockItem> MACHINE_FRAME_ITEM=ITEMS.registerSimpleBlockItem("machine_frame",MACHINE_FRAME);
@@ -87,6 +88,7 @@ public class MeteorosProtocol {
     public static final DeferredItem<BlockItem> WEATHER_STATION_ITEM=ITEMS.registerSimpleBlockItem("weather_station",WEATHER_STATION);
     public static final DeferredItem<BlockItem> WEATHER_TANK_ITEM=ITEMS.registerSimpleBlockItem("weather_tank",WEATHER_TANK);
     public static final DeferredItem<BlockItem> PARTICLE_PIPE_ITEM=ITEMS.registerSimpleBlockItem("particle_pipe",PARTICLE_PIPE);
+    public static final DeferredItem<BlockItem> PARTICLE_PORT_ITEM=ITEMS.registerSimpleBlockItem("particle_port",PARTICLE_PORT);
     public static final DeferredItem<BlockItem> PORCELAIN_SHELL_BLOCK_ITEM=ITEMS.registerSimpleBlockItem("porcelain_shell",PORCELAIN_SHELL);
     public static final DeferredItem<BlockItem> INFINITE_ENERGY_ITEM=ITEMS.registerSimpleBlockItem("infinite_energy",INFINITE_ENERGY);
     public static final DeferredItem<BlockItem> INFINITE_PARTICLE_CELL_ITEM=ITEMS.registerSimpleBlockItem("infinite_particle_cell",INFINITE_PARTICLE_CELL);
@@ -98,9 +100,9 @@ public class MeteorosProtocol {
     public static final DeferredItem<Item> PORCELAIN_SHELL_ITEM=ITEMS.registerSimpleItem("porcelain_shell_item");
     public static final DeferredItem<Item> INFINITE_PARTICLE_CANISTER=ITEMS.register("infinite_particle_canister",()->new InfiniteParticleCanisterItem(new Item.Properties()));
     public static final DeferredItem<Item> PARTICLE_DETECTOR=ITEMS.register("particle_detector",()->new ParticleDetectorItem(new Item.Properties()));
-    public static final List<DeferredBlock<Block>> BLOCK_LIST=List.of(MACHINE_FRAME,THERMAL_GENERATOR,PARTICLE_INTAKE,PHASE_SEPARATOR,WEATHER_STATION,WEATHER_TANK,PARTICLE_PIPE,PORCELAIN_SHELL,INFINITE_ENERGY,INFINITE_PARTICLE_CELL);
+    public static final List<DeferredBlock<Block>> BLOCK_LIST=List.of(MACHINE_FRAME,THERMAL_GENERATOR,PARTICLE_INTAKE,PHASE_SEPARATOR,WEATHER_STATION,WEATHER_TANK,PARTICLE_PIPE,PARTICLE_PORT,PORCELAIN_SHELL,INFINITE_ENERGY,INFINITE_PARTICLE_CELL);
     public static final List<DeferredItem<Item>> ITEM_LIST=List.of(WRENCH,CANISTER,FILTER_CARTRIDGE,PARTICLE_NOZZLE,ENERGY_COIL,PORCELAIN_SHELL_ITEM,INFINITE_PARTICLE_CANISTER,PARTICLE_DETECTOR);
-    public static final List<DeferredItem<BlockItem>> BLOCK_ITEM_LIST=List.of(MACHINE_FRAME_ITEM,THERMAL_GENERATOR_ITEM,PARTICLE_INTAKE_ITEM,PHASE_SEPARATOR_ITEM,WEATHER_STATION_ITEM,WEATHER_TANK_ITEM,PARTICLE_PIPE_ITEM,PORCELAIN_SHELL_BLOCK_ITEM,INFINITE_ENERGY_ITEM,INFINITE_PARTICLE_CELL_ITEM);
+    public static final List<DeferredItem<BlockItem>> BLOCK_ITEM_LIST=List.of(MACHINE_FRAME_ITEM,THERMAL_GENERATOR_ITEM,PARTICLE_INTAKE_ITEM,PHASE_SEPARATOR_ITEM,WEATHER_STATION_ITEM,WEATHER_TANK_ITEM,PARTICLE_PIPE_ITEM,PARTICLE_PORT_ITEM,PORCELAIN_SHELL_BLOCK_ITEM,INFINITE_ENERGY_ITEM,INFINITE_PARTICLE_CELL_ITEM);
     public static final DeferredHolder<CreativeModeTab,CreativeModeTab> MAIN_TAB=TABS.register("main",()->CreativeModeTab.builder().title(Component.translatable("itemGroup.meteorosprotocol.main")).icon(()->new ItemStack(WEATHER_STATION_ITEM.get())).displayItems((p,o)->{for(DeferredItem<BlockItem>b:BLOCK_ITEM_LIST)o.accept(b.get());for(DeferredItem<Item>i:ITEM_LIST){if(i!=INFINITE_PARTICLE_CANISTER)o.accept(i.get());}o.accept(INFINITE_PARTICLE_CANISTER.get());for(Phase phase:Phase.all())o.accept(InfiniteParticleCanisterItem.createFilled(phase));}).build());
     public MeteorosProtocol(IEventBus bus,ModContainer container){PhaseRegistry.PHASES.register(bus);BLOCKS.register(bus);BLOCK_ENTITY_TYPES.register(bus);ITEMS.register(bus);TABS.register(bus);MENUS.register(bus);container.registerConfig(ModConfig.Type.COMMON,Config.SPEC);}
 

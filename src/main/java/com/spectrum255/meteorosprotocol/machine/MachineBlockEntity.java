@@ -74,6 +74,14 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
     public static final long PIPE_PHASE_MPU_PER_TRANSFER = 100L;
     private static final long PIPE_INTERVAL = 5L;
 
+    /**
+     * Small per-phase budget used by the machines' own active I/O (generator
+     * pull, separator push) once every 5 ticks: 25 / 5 t = 5 mPU/t per phase.
+     * The intake tower uses the larger pipe budgets for its output because it
+     * is the source of the whole production chain.
+     */
+    private static final long ACTIVE_IO_SMALL_BUDGET = 25L;
+
     /** Shared total capacity of the mixed buffer (1,000 PU). */
     public static final long MIXED_CAPACITY = 1_000_000L;
     /** Independent capacity of each phase tank (8,000 PU). */
@@ -206,6 +214,16 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
             if (state.hasProperty(MachineBlock.ACTIVE) && state.getValue(MachineBlock.ACTIVE) != active) {
                 level.setBlock(pos, state.setValue(MachineBlock.ACTIVE, active), Block.UPDATE_CLIENTS);
             }
+        } else if (block == MeteorosProtocol.PARTICLE_PORT.get()) {
+            if (machine.progress % PIPE_INTERVAL == 0L) {
+                machine.tickPort(level, pos);
+            }
+        }
+        // Machines with particle I/O act on their direct neighbours every 5 ticks;
+        // pipes keep running their own tickPipe pass and are left out of this one.
+        if (block != MeteorosProtocol.PARTICLE_PIPE.get()
+                && machine.progress % PIPE_INTERVAL == 0L) {
+            machine.tickActiveIo(level, pos);
         }
         machine.progress++;
         if ((machine.progress & 19) == 0) {
@@ -452,6 +470,347 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
                 if (pullPhaseContents(source) > 0L) {
                     return;
                 }
+            }
+        }
+    }
+
+    /**
+     * Machines with particle I/O exchange with their six direct neighbours once
+     * every {@link #PIPE_INTERVAL} ticks, so a machine touching a container or
+     * another machine moves material without a pipe. Nothing is chained, and
+     * adjacent pipes are skipped because {@link #tickPipe(ServerLevel, BlockPos)}
+     * already pulls from machines at the same cadence (skipping avoids moving the
+     * same material twice per tick window).
+     *
+     * <p>Direction table:</p>
+     * <ul>
+     *   <li>generator: pull up to 25 mPU Thermion (phase tanks first, mixed buffer
+     *       second); its Cryon output is still handled in {@code tickGenerator};</li>
+     *   <li>separator: pull up to 25 mPU mixed while below 25% buffered, push up to
+     *       25 mPU of each stored phase;</li>
+     *   <li>intake tower: push up to 500 mPU mixed and 100 mPU of each phase;</li>
+     *   <li>weather blocks and pipes: no active I/O.</li>
+     * </ul>
+     */
+    private void tickActiveIo(ServerLevel level, BlockPos pos) {
+        Block block = getBlockState().getBlock();
+        if (block == MeteorosProtocol.THERMAL_GENERATOR.get()) {
+            long pulled = pullPhaseFromNeighbours(level, Phase.THERMION, ACTIVE_IO_SMALL_BUDGET, false);
+            if (pulled < ACTIVE_IO_SMALL_BUDGET) {
+                pullPhaseFromNeighbours(level, Phase.THERMION, ACTIVE_IO_SMALL_BUDGET - pulled, true);
+            }
+        } else if (block == MeteorosProtocol.PHASE_SEPARATOR.get()) {
+            if (getTotal() < MIXED_CAPACITY / 4L) {
+                pullMixedFromNeighbours(level, ACTIVE_IO_SMALL_BUDGET);
+            }
+            for (Phase phase : Phase.all()) {
+                if (phases[phase.index()] > 0L) {
+                    pushPhaseToNeighbours(level, phase, ACTIVE_IO_SMALL_BUDGET);
+                }
+            }
+        } else if (block == MeteorosProtocol.PARTICLE_INTAKE.get()) {
+            if (getTotal() > 0L) {
+                pushMixedToNeighbours(level, PIPE_MPU_PER_TRANSFER);
+            }
+            for (Phase phase : Phase.all()) {
+                if (phases[phase.index()] > 0L) {
+                    pushPhaseToNeighbours(level, phase, PIPE_PHASE_MPU_PER_TRANSFER);
+                }
+            }
+        }
+    }
+
+    /** Direct neighbour that can take part in active I/O (not air, not a pipe). */
+    private static boolean isActiveIoNeighbour(ServerLevel level, BlockPos pos) {
+        BlockState state = level.getBlockState(pos);
+        return !state.isAir() && !state.is(MeteorosProtocol.PARTICLE_PIPE.get());
+    }
+
+    /**
+     * Pulls {@code phase} from adjacent {@code PHASE_STORAGE}s (or, when
+     * {@code fromMixed} is set, from their mixed buffers) into this machine's
+     * phase tank. Simulate first, execute, put back anything the tank refused.
+     */
+    private long pullPhaseFromNeighbours(ServerLevel level, Phase phase, long budget, boolean fromMixed) {
+        long moved = 0L;
+        for (Direction direction : Direction.values()) {
+            if (moved >= budget) {
+                break;
+            }
+            BlockPos neighbour = worldPosition.relative(direction);
+            if (!isActiveIoNeighbour(level, neighbour)) {
+                continue;
+            }
+            long got;
+            if (fromMixed) {
+                MixedStorage source = level.getCapability(
+                        ParticleCapabilities.MIXED_STORAGE, neighbour, direction.getOpposite());
+                if (source == null || source == this) {
+                    continue;
+                }
+                got = pullPhaseFromMixed(source, phase, budget - moved);
+            } else {
+                PhaseStorage source = level.getCapability(ParticleCapabilities.PHASE_STORAGE, neighbour);
+                if (source == null || source == phaseStorage) {
+                    continue;
+                }
+                got = pullPhaseFromStorage(source, phase, budget - moved);
+            }
+            moved += got;
+        }
+        return moved;
+    }
+
+    /** Pulls mixed particles from adjacent mixed storages into this machine. */
+    private long pullMixedFromNeighbours(ServerLevel level, long budget) {
+        long moved = 0L;
+        for (Direction direction : Direction.values()) {
+            if (moved >= budget) {
+                break;
+            }
+            BlockPos neighbour = worldPosition.relative(direction);
+            if (!isActiveIoNeighbour(level, neighbour)) {
+                continue;
+            }
+            MixedStorage source = level.getCapability(
+                    ParticleCapabilities.MIXED_STORAGE, neighbour, direction.getOpposite());
+            if (source == null || source == this) {
+                continue;
+            }
+            moved += pullMixedFrom(source, budget - moved);
+        }
+        return moved;
+    }
+
+    /** Pushes up to {@code budget} mPU of one stored phase into adjacent phase tanks. */
+    private long pushPhaseToNeighbours(ServerLevel level, Phase phase, long budget) {
+        long moved = 0L;
+        for (Direction direction : Direction.values()) {
+            if (moved >= budget) {
+                break;
+            }
+            BlockPos neighbour = worldPosition.relative(direction);
+            if (!isActiveIoNeighbour(level, neighbour)) {
+                continue;
+            }
+            PhaseStorage target = level.getCapability(ParticleCapabilities.PHASE_STORAGE, neighbour);
+            if (target == null || target == phaseStorage) {
+                continue;
+            }
+            moved += pushPhaseTo(target, phase, budget - moved);
+        }
+        return moved;
+    }
+
+    /** Pushes up to {@code budget} mPU of the mixed buffer into adjacent mixed storages. */
+    private long pushMixedToNeighbours(ServerLevel level, long budget) {
+        long moved = 0L;
+        for (Direction direction : Direction.values()) {
+            if (moved >= budget) {
+                break;
+            }
+            BlockPos neighbour = worldPosition.relative(direction);
+            if (!isActiveIoNeighbour(level, neighbour)) {
+                continue;
+            }
+            MixedStorage target = level.getCapability(
+                    ParticleCapabilities.MIXED_STORAGE, neighbour, direction.getOpposite());
+            if (target == null || target == this) {
+                continue;
+            }
+            moved += pushMixedTo(target, budget - moved);
+        }
+        return moved;
+    }
+
+    // ---- Single-target transfers -------------------------------------------
+    // Shared by the machine-to-storage I/O above and by the port, which talks to
+    // exactly one container: the block it faces.
+
+    private long pushMixedTo(MixedStorage target, long budget) {
+        long limit = Math.min(budget, getTotal());
+        if (limit <= 0L) {
+            return 0L;
+        }
+        long moved = 0L;
+        long[] plan = ParticleMath.amountsFromShares(limit, shares());
+        for (Phase phase : Phase.all()) {
+            if (moved >= limit) {
+                break;
+            }
+            long want = Math.min(plan[phase.index()], mixed[phase.index()]);
+            if (want <= 0L) {
+                continue;
+            }
+            long accepted = target.insert(phase, want, true);
+            if (accepted <= 0L) {
+                continue;
+            }
+            long extracted = extract(phase, accepted, false);
+            long inserted = target.insert(phase, extracted, false);
+            if (inserted < extracted) {
+                insert(phase, extracted - inserted, false);
+            }
+            moved += inserted;
+        }
+        if (moved > 0L) {
+            setChanged();
+        }
+        return moved;
+    }
+
+    private long pullMixedFrom(MixedStorage source, long budget) {
+        long space = MIXED_CAPACITY - getTotal();
+        long limit = Math.min(budget, Math.min(space, source.getTotal()));
+        if (limit <= 0L) {
+            return 0L;
+        }
+        long moved = 0L;
+        long[] plan = ParticleMath.amountsFromShares(limit, source.shares());
+        for (Phase phase : Phase.all()) {
+            if (moved >= limit || space <= 0L) {
+                break;
+            }
+            long want = Math.min(plan[phase.index()], source.getAmount(phase));
+            if (want <= 0L) {
+                continue;
+            }
+            long extracted = source.extract(phase, want, true);
+            long accepted = insert(phase, extracted, true);
+            if (accepted <= 0L) {
+                continue;
+            }
+            long reallyExtracted = source.extract(phase, accepted, false);
+            long inserted = insert(phase, reallyExtracted, false);
+            if (inserted < reallyExtracted) {
+                source.insert(phase, reallyExtracted - inserted, false);
+            }
+            moved += inserted;
+            space -= inserted;
+        }
+        if (moved > 0L) {
+            setChanged();
+        }
+        return moved;
+    }
+
+    private long pushPhaseTo(PhaseStorage target, Phase phase, long budget) {
+        long want = Math.min(Math.min(budget, phases[phase.index()]),
+                target.getCapacity(phase) - target.getAmount(phase));
+        if (want <= 0L) {
+            return 0L;
+        }
+        long accepted = target.insert(phase, want, true);
+        if (accepted <= 0L) {
+            return 0L;
+        }
+        long extracted = phaseStorage.extract(phase, accepted, false);
+        long inserted = target.insert(phase, extracted, false);
+        if (inserted < extracted) {
+            phaseStorage.insert(phase, extracted - inserted, false);
+        }
+        if (inserted > 0L) {
+            setChanged();
+        }
+        return inserted;
+    }
+
+    private long pullPhaseFromStorage(PhaseStorage source, Phase phase, long budget) {
+        long space = phase.tankCapacity() - phases[phase.index()];
+        long want = Math.min(Math.min(budget, space), source.getAmount(phase));
+        if (want <= 0L) {
+            return 0L;
+        }
+        long extracted = source.extract(phase, want, true);
+        long accepted = phaseStorage.insert(phase, extracted, true);
+        if (accepted <= 0L) {
+            return 0L;
+        }
+        long reallyExtracted = source.extract(phase, accepted, false);
+        long inserted = phaseStorage.insert(phase, reallyExtracted, false);
+        if (inserted < reallyExtracted) {
+            source.insert(phase, reallyExtracted - inserted, false);
+        }
+        if (inserted > 0L) {
+            setChanged();
+        }
+        return inserted;
+    }
+
+    private long pullPhaseFromMixed(MixedStorage source, Phase phase, long budget) {
+        long space = phase.tankCapacity() - phases[phase.index()];
+        long want = Math.min(Math.min(budget, space), source.getAmount(phase));
+        if (want <= 0L) {
+            return 0L;
+        }
+        long extracted = source.extract(phase, want, true);
+        long accepted = phaseStorage.insert(phase, extracted, true);
+        if (accepted <= 0L) {
+            return 0L;
+        }
+        long reallyExtracted = source.extract(phase, accepted, false);
+        long inserted = phaseStorage.insert(phase, reallyExtracted, false);
+        if (inserted < reallyExtracted) {
+            source.insert(phase, reallyExtracted - inserted, false);
+        }
+        if (inserted > 0L) {
+            setChanged();
+        }
+        return inserted;
+    }
+
+    /**
+     * The port's I/O: FACING points at the container it services. When the port
+     * holds anything it pushes into that container; when it is empty it pulls
+     * from it, using the pipe budgets (500 mPU mixed, 100 mPU per phase per
+     * 5-tick window).
+     */
+    private void tickPort(ServerLevel level, BlockPos pos) {
+        BlockState ownState = getBlockState();
+        if (!ownState.hasProperty(MachineBlock.FACING)) {
+            return;
+        }
+        Direction facing = ownState.getValue(MachineBlock.FACING);
+        BlockPos targetPos = pos.relative(facing);
+        if (!isActiveIoNeighbour(level, targetPos)) {
+            return;
+        }
+        MixedStorage mixedTarget = level.getCapability(
+                ParticleCapabilities.MIXED_STORAGE, targetPos, facing.getOpposite());
+        if (mixedTarget == this) {
+            mixedTarget = null;
+        }
+        PhaseStorage phaseTarget = level.getCapability(ParticleCapabilities.PHASE_STORAGE, targetPos);
+        if (phaseTarget == phaseStorage) {
+            phaseTarget = null;
+        }
+        if (mixedTarget == null && phaseTarget == null) {
+            return;
+        }
+
+        boolean hasContents = getTotal() > 0L || !phaseStorage.isEmpty();
+        if (hasContents) {
+            if (mixedTarget != null && getTotal() > 0L) {
+                pushMixedTo(mixedTarget, PIPE_MPU_PER_TRANSFER);
+            }
+            if (phaseTarget != null) {
+                for (Phase phase : Phase.all()) {
+                    if (phases[phase.index()] > 0L) {
+                        pushPhaseTo(phaseTarget, phase, PIPE_PHASE_MPU_PER_TRANSFER);
+                    }
+                }
+            }
+            return;
+        }
+
+        if (mixedTarget != null) {
+            pullMixedFrom(mixedTarget, PIPE_MPU_PER_TRANSFER);
+            for (Phase phase : Phase.all()) {
+                pullPhaseFromMixed(mixedTarget, phase, PIPE_PHASE_MPU_PER_TRANSFER);
+            }
+        } else if (phaseTarget != null) {
+            for (Phase phase : Phase.all()) {
+                pullPhaseFromStorage(phaseTarget, phase, PIPE_PHASE_MPU_PER_TRANSFER);
             }
         }
     }
@@ -1026,6 +1385,9 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
             }
             if (block == MeteorosProtocol.WEATHER_TANK.get()) {
                 return Component.translatable("container.meteorosprotocol.weather_tank");
+            }
+            if (block == MeteorosProtocol.PARTICLE_PORT.get()) {
+                return Component.translatable("container.meteorosprotocol.particle_port");
             }
         }
         return Component.translatable("container.meteorosprotocol.particle_intake");

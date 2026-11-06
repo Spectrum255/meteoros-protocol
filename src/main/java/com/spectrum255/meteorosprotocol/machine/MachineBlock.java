@@ -5,6 +5,9 @@ import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
+import com.spectrum255.meteorosprotocol.item.CanisterItem;
+import com.spectrum255.meteorosprotocol.item.InfiniteParticleCanisterItem;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.BaseEntityBlock;
@@ -73,6 +76,14 @@ public class MachineBlock extends BaseEntityBlock {
     @Override protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hit) {
         // Pipes are pure transport: no GUI, so a right click does not open a menu.
         if (state.getBlock() instanceof ParticlePipeBlock) {
+            return InteractionResult.PASS;
+        }
+        // A held canister (not sneaking) must reach CanisterItem#useOn, which fills
+        // or drains the machine. Consuming the click here would swallow it and open
+        // the menu instead; sneaking still falls through to the menu below.
+        ItemStack held = player.getMainHandItem();
+        if (!player.isShiftKeyDown()
+                && (held.getItem() instanceof CanisterItem || held.getItem() instanceof InfiniteParticleCanisterItem)) {
             return InteractionResult.PASS;
         }
         // Every other machine owns a menu now: the intake tower has its own layout

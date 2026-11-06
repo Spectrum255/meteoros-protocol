@@ -4,7 +4,6 @@ import com.spectrum255.meteorosprotocol.MeteorosProtocol;
 import com.spectrum255.meteorosprotocol.machine.MachineBlock;
 import com.spectrum255.meteorosprotocol.machine.MachineBlockEntity;
 import com.spectrum255.meteorosprotocol.particle.Phase;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import net.minecraft.ChatFormatting;
@@ -54,9 +53,7 @@ public final class MeteorosJadePlugin implements IWailaPlugin {
         private static final String ROOT = "MeteorosProtocol";
         private static final String PHASE_PREFIX = "Phase.";
         private static final String MIXED_PREFIX = "Mixed.";
-        private static final int MAX_PHASE_BARS = 3;
         private static final int ENERGY_COLOR = 0xFFD24B3F;
-        private static final int MIXED_COLOR = 0xFF8B8B8B;
 
         @Override
         public ResourceLocation getUid() {
@@ -101,19 +98,16 @@ public final class MeteorosJadePlugin implements IWailaPlugin {
 
             long energy;
             long energyCapacity;
-            long mixed;
             long loss;
             if (root.contains("Energy")) {
                 energy = root.getLong("Energy");
                 energyCapacity = root.getLong("EnergyCapacity");
-                mixed = root.getLong("Mixed");
                 loss = root.getLong("Loss");
             } else if (machine != null) {
                 // Fallback for the first client frame before the server payload
                 // arrives; the client block entity is synced via getUpdateTag().
                 energy = machine.energy();
                 energyCapacity = machine.energyCapacity();
-                mixed = machine.getTotal();
                 loss = machine.lastSeparatorLoss();
             } else {
                 return;
@@ -131,49 +125,46 @@ public final class MeteorosJadePlugin implements IWailaPlugin {
                     box,
                     true));
 
-            tooltip.add(helper.progress(
-                    fraction(mixed, MachineBlockEntity.MIXED_CAPACITY),
-                    Component.literal(num(mixed) + " / " + num(MachineBlockEntity.MIXED_CAPACITY) + " mPU"),
-                    helper.progressStyle().color(MIXED_COLOR),
-                    box,
-                    true));
+            // All phases share one strip: segment widths are proportional to each
+            // phase's share of the stored total, and the fill ceiling is the sum of
+            // the phase tank capacities. When the tanks are empty we fall back to the
+            // mixed buffer, whose ceiling is the shared mixed capacity.
+            List<Phase> phases = Phase.all();
+            int[] colors = new int[phases.size()];
+            long[] tankAmounts = new long[phases.size()];
+            long tankTotal = 0L;
+            long tankCapacity = 0L;
+            for (Phase phase : phases) {
+                int index = phase.index();
+                colors[index] = phase.argb();
+                long amount = tankAmount(root, machine, phase);
+                tankAmounts[index] = amount;
+                tankTotal += amount;
+                tankCapacity += phase.tankCapacity();
+            }
+
+            long[] stripAmounts = tankAmounts;
+            long stripTotal = tankTotal;
+            long stripCapacity = tankCapacity;
+            if (stripTotal <= 0L) {
+                stripAmounts = new long[phases.size()];
+                long mixedStored = 0L;
+                for (Phase phase : phases) {
+                    long amount = mixedAmount(root, machine, phase);
+                    stripAmounts[phase.index()] = amount;
+                    mixedStored += amount;
+                }
+                stripTotal = mixedStored;
+                stripCapacity = MachineBlockEntity.MIXED_CAPACITY;
+            }
+
+            tooltip.add(new MixedStripElement(colors, stripAmounts, stripTotal, stripCapacity));
+            tooltip.add(Component.literal(num(stripTotal) + " / " + num(stripCapacity) + " mPU")
+                    .withStyle(ChatFormatting.GRAY));
 
             if (accessor.getBlock() == MeteorosProtocol.PHASE_SEPARATOR.get()) {
                 tooltip.add(Component.translatable("jade.meteorosprotocol.loss", num(loss)));
             }
-
-            List<Phase> stored = nonZeroTanks(root, machine);
-            int shown = Math.min(MAX_PHASE_BARS, stored.size());
-            for (int i = 0; i < shown; i++) {
-                Phase phase = stored.get(i);
-                long amount = tankAmount(root, machine, phase);
-                tooltip.add(helper.progress(
-                        fraction(amount, phase.tankCapacity()),
-                        Component.literal(phase.shortName().getString()
-                                + " " + num(amount) + " / " + num(phase.tankCapacity())),
-                        helper.progressStyle().color(phase.argb()),
-                        box,
-                        true));
-            }
-            if (stored.size() > MAX_PHASE_BARS) {
-                tooltip.add(Component.translatable(
-                                "jade.meteorosprotocol.phases.more", stored.size() - MAX_PHASE_BARS)
-                        .withStyle(ChatFormatting.GRAY));
-            } else if (stored.isEmpty()) {
-                tooltip.add(Component.translatable("jade.meteorosprotocol.phases.empty")
-                        .withStyle(ChatFormatting.GRAY));
-            }
-        }
-
-        /** Non-zero phase tanks, in registry order (core phases first). */
-        private static List<Phase> nonZeroTanks(CompoundTag root, MachineBlockEntity machine) {
-            List<Phase> stored = new ArrayList<>();
-            for (Phase phase : Phase.all()) {
-                if (tankAmount(root, machine, phase) > 0L) {
-                    stored.add(phase);
-                }
-            }
-            return stored;
         }
 
         private static long mixedAmount(CompoundTag root, MachineBlockEntity machine, Phase phase) {
