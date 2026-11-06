@@ -36,6 +36,8 @@ public final class Phase {
 
     private final ResourceLocation key;
     private final int rgb;
+    /** Precomputed dim variant of {@link #rgb}, used for empty gauge tracks. */
+    private final int darkRgb;
     private final long tankCapacity;
     private final boolean atmospheric;
     private final boolean core;
@@ -55,6 +57,7 @@ public final class Phase {
     ) {
         this.key = Objects.requireNonNull(key, "key");
         this.rgb = rgb & 0xFFFFFF;
+        this.darkRgb = darken(this.rgb);
         this.tankCapacity = Math.max(0L, tankCapacity);
         this.atmospheric = atmospheric;
         this.core = core;
@@ -113,6 +116,28 @@ public final class Phase {
     /** Opaque ARGB display colour (0xFF alpha). */
     public int argb() {
         return 0xFF000000 | rgb;
+    }
+
+    /**
+     * Packed 0xRRGGBB dim variant of {@link #rgb}, precomputed when the phase is
+     * built: each channel is {@code channel * 35 / 100}, clamped to at least 8 so
+     * very dark colours never collapse to pure black. Registry-driven, so addon
+     * phases get the same treatment automatically.
+     */
+    public int darkRgb() {
+        return darkRgb;
+    }
+
+    /** Opaque ARGB version of {@link #darkRgb()} (alpha 0xFF). */
+    public int darkArgb() {
+        return 0xFF000000 | darkRgb;
+    }
+
+    private static int darken(int rgb) {
+        int red = Math.max(8, ((rgb >> 16) & 0xFF) * 35 / 100);
+        int green = Math.max(8, ((rgb >> 8) & 0xFF) * 35 / 100);
+        int blue = Math.max(8, (rgb & 0xFF) * 35 / 100);
+        return (red << 16) | (green << 8) | blue;
     }
 
     public Component displayName() {

@@ -13,24 +13,18 @@ public final class IntakeLayout {
     public static final int TITLE_Y = 6;
 
     /**
-     * Phase-tank frame. The inner 63 x 38 px area holds six vertical phase bars;
-     * the frame was widened from 26 px so the old six-column selector is gone and
-     * the tank uses that space instead.
+     * Six hollow phase-tank bars. The old tank frame is gone: the bars themselves
+     * fill the whole former tank area (7..72), each 10 px wide with an 11 px step,
+     * so the 1 px gaps between bars are covered by the hit boxes.
      */
-    public static final int TANK_X = 7;
-    public static final int TANK_Y = 19;
-    public static final int TANK_WIDTH = 65;
-    public static final int TANK_HEIGHT = 40;
-
-    /** Six vertical phase-tank bars inside the tank (8 px wide, 2 px gap). */
     public static final int PHASE_BAR_COUNT = 6;
-    public static final int PHASE_BAR_X = 9;
-    public static final int PHASE_BAR_Y = 21;
-    public static final int PHASE_BAR_WIDTH = 8;
-    public static final int PHASE_BAR_HEIGHT = 36;
-    public static final int PHASE_BAR_STEP = 10;
-    /** The widget hit box is 2 px wider than the visible bar (1 px on each side). */
-    public static final int PHASE_BAR_HIT_WIDTH = 10;
+    public static final int PHASE_BAR_X = 7;
+    public static final int PHASE_BAR_Y = 19;
+    public static final int PHASE_BAR_WIDTH = 10;
+    public static final int PHASE_BAR_HEIGHT = 40;
+    public static final int PHASE_BAR_STEP = 11;
+    /** Hit boxes span the full step, so adjacent bars never leave a dead 1 px gap. */
+    public static final int PHASE_BAR_HIT_WIDTH = 11;
 
     /** Mixed-buffer bar below the tank (proportion of MIXED_CAPACITY). */
     public static final int MIXED_BAR_X = 8;

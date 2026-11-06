@@ -91,6 +91,7 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
                     index,
                     () -> phaseFill(index),
                     () -> Phase.all().get(index).argb(),
+                    () -> Phase.all().get(index).darkArgb(),
                     () -> this.menu.canisterPhaseIndex() == index,
                     id -> sendButton(2 + id)));
             this.phaseBars.add(bar);
@@ -127,12 +128,10 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
         int y = this.topPos;
         MeteorosGui.panel(graphics, x, y, IntakeLayout.WIDTH, IntakeLayout.HEIGHT);
 
-        drawTankFrame(graphics, x + IntakeLayout.TANK_X, y + IntakeLayout.TANK_Y);
-
-        MeteorosGui.barH(graphics, x + IntakeLayout.MIXED_BAR_X, y + IntakeLayout.MIXED_BAR_Y,
+        MeteorosGui.phaseBarH(graphics, x + IntakeLayout.MIXED_BAR_X, y + IntakeLayout.MIXED_BAR_Y,
                 IntakeLayout.MIXED_BAR_WIDTH, IntakeLayout.MIXED_BAR_HEIGHT,
                 (float) ((double) this.menu.mixedTotal() / (double) MachineBlockEntity.MIXED_CAPACITY),
-                mixedBufferColor());
+                MIXED_COLOR, 0xFF555555);
 
         MeteorosGui.barH(graphics, x + IntakeLayout.FE_X, y + IntakeLayout.FE_Y,
                 IntakeLayout.FE_WIDTH, IntakeLayout.FE_HEIGHT,
@@ -161,19 +160,6 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
         if (this.menu.getSlot(0).getItem().isEmpty()) {
             drawGhostFilter(graphics, x + IntakeLayout.FILTER_SLOT_X, y + IntakeLayout.FILTER_SLOT_Y);
         }
-    }
-
-    /** Recessed frame behind the six phase bars; the bars themselves are widgets. */
-    private static void drawTankFrame(GuiGraphics graphics, int x, int y) {
-        int width = IntakeLayout.TANK_WIDTH;
-        int height = IntakeLayout.TANK_HEIGHT;
-        graphics.fill(x, y, x + width, y + height, MeteorosGui.SLOT_DARK);
-        graphics.fill(x + 1, y + 1, x + width - 1, y + height - 1, MeteorosGui.SLOT_BODY);
-    }
-
-    /** Colour of the mixed-buffer bar: one fixed grey, independent of composition. */
-    private static int mixedBufferColor() {
-        return MIXED_COLOR;
     }
 
     /** Phase currently selected as the extraction target, clamped for safety. */
@@ -256,14 +242,6 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
                 IntakeLayout.FE_WIDTH, IntakeLayout.FE_HEIGHT)) {
             String line = "FE " + String.format(Locale.ROOT, "%,d", this.menu.energy()) + " / "
                     + String.format(Locale.ROOT, "%,d", IntakeMenu.ENERGY_CAPACITY);
-            MeteorosGui.tooltip(graphics, this.font, Component.literal(line), mouseX, mouseY);
-            return;
-        }
-        if (inside(mouseX, mouseY, x + IntakeLayout.TANK_X, y + IntakeLayout.TANK_Y,
-                IntakeLayout.TANK_WIDTH, IntakeLayout.TANK_HEIGHT)) {
-            String line = Component.translatable("gui.meteorosprotocol.intake.mixed").getString()
-                    + ": " + String.format(Locale.ROOT, "%,d", this.menu.mixedTotal())
-                    + " / 1,000,000 mPU";
             MeteorosGui.tooltip(graphics, this.font, Component.literal(line), mouseX, mouseY);
             return;
         }

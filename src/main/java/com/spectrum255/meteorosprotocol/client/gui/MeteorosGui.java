@@ -186,6 +186,63 @@ public final class MeteorosGui {
     }
 
     /**
+     * Hollow vertical phase bar: the whole cell is the phase's dim colour, a 1 px
+     * sunken border (dark top/left, white bottom/right) sits on top, and the
+     * bright fill rises from the bottom. Unlike {@link #barV} there is no outer
+     * frame or grey track, so a row of bars reads like empty inventory slots.
+     *
+     * @param fillArgb  bright phase colour for the filled part
+     * @param emptyArgb dim phase colour ({@link com.spectrum255.meteorosprotocol.particle.Phase#darkArgb()})
+     */
+    public static void phaseBarV(GuiGraphics g, int x, int y, int w, int h, float level,
+                                 int fillArgb, int emptyArgb) {
+        if (w <= 0 || h <= 0) {
+            return;
+        }
+        g.fill(x, y, x + w, y + h, emptyArgb);
+        if (w <= 2 || h <= 2) {
+            return;
+        }
+        g.fill(x, y, x + w, y + 1, SLOT_DARK);
+        g.fill(x, y, x + 1, y + h, SLOT_DARK);
+        g.fill(x, y + h - 1, x + w, y + h, SLOT_LIGHT);
+        g.fill(x + w - 1, y, x + w, y + h, SLOT_LIGHT);
+        int innerH = h - 2;
+        int fill = Math.round(Mth.clamp(level, 0f, 1f) * innerH);
+        if (fill > 0) {
+            g.fill(x + 1, y + h - 1 - fill, x + w - 1, y + h - 1, fillArgb);
+        }
+    }
+
+    /**
+     * Hollow horizontal bar, mirroring {@link #phaseBarV}: the whole cell is the
+     * empty colour, a 1 px sunken border (dark left/top, white right/bottom) sits
+     * on top, and the fill grows from the left edge.
+     *
+     * @param fillArgb  colour of the filled part
+     * @param emptyArgb dim colour of the unfilled part
+     */
+    public static void phaseBarH(GuiGraphics g, int x, int y, int w, int h, float level,
+                                 int fillArgb, int emptyArgb) {
+        if (w <= 0 || h <= 0) {
+            return;
+        }
+        g.fill(x, y, x + w, y + h, emptyArgb);
+        if (w <= 2 || h <= 2) {
+            return;
+        }
+        g.fill(x, y, x + w, y + 1, SLOT_DARK);
+        g.fill(x, y, x + 1, y + h, SLOT_DARK);
+        g.fill(x, y + h - 1, x + w, y + h, SLOT_LIGHT);
+        g.fill(x + w - 1, y, x + w, y + h, SLOT_LIGHT);
+        int innerW = w - 2;
+        int fill = Math.round(Mth.clamp(level, 0f, 1f) * innerW);
+        if (fill > 0) {
+            g.fill(x + 1, y + 1, x + 1 + fill, y + h - 1, fillArgb);
+        }
+    }
+
+    /**
      * Horizontal composition strip: segments proportional to {@code amounts},
      * the last non-empty phase takes the rounding remainder so the total width
      * never drifts. The caller owns the frame/background.

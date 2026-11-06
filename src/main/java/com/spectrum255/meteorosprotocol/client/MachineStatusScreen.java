@@ -201,7 +201,8 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
         float level = phase.tankCapacity() <= 0L
                 ? 0f
                 : (float) Math.min(1.0, (double) amount / phase.tankCapacity());
-        MeteorosGui.barV(graphics, x, y, width, PHASE_HEIGHT, level, phase.argb());
+        MeteorosGui.phaseBarV(graphics, x, y, width, PHASE_HEIGHT, level,
+                phase.argb(), phase.darkArgb());
         if (inside(mouseX, mouseY, x, y, width, PHASE_HEIGHT)) {
             graphics.fill(x, y, x + width, y + PHASE_HEIGHT, 0x30FFFFFF);
         }
