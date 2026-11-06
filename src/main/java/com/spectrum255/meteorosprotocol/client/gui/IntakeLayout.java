@@ -53,6 +53,21 @@ public final class IntakeLayout {
     /** Extract button: pumps the selected phase into the canister in slot 1. */
     public static final int BUTTON_EXTRACT_Y = 67;
 
+    /**
+     * RESERVED BAND — do not fill, do not shrink the window.
+     *
+     * <p>The strip from roughly x = 134..168, y = 18..84 (right of the icon buttons,
+     * above the inventory label) is intentionally empty. The user wants machine
+     * upgrade slots there once the upgrade system exists ("空位置放置机器升级槽").
+     * Keep the 176 x 180 window and leave this band free so upgrades can be added
+     * without redoing this layout; when they land, put 18 x 18 slots here and read
+     * their positions from this class like every other control.
+     */
+    public static final int RESERVED_BAND_X = 134;
+    public static final int RESERVED_BAND_Y = 18;
+    public static final int RESERVED_BAND_WIDTH = 34;
+    public static final int RESERVED_BAND_HEIGHT = 66;
+
     /** Player inventory label and 3 x 9 grid + hotbar. */
     public static final int INVENTORY_LABEL_X = 8;
     public static final int INVENTORY_LABEL_Y = 86;
