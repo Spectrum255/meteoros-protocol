@@ -119,7 +119,8 @@ public class MeteorosProtocol {
         event.registerBlockEntity(ParticleCapabilities.MIXED_STORAGE, MACHINE_BLOCK_ENTITY.get(), (machine, side) -> machine.mixedStorageForSide(side));
         event.registerBlockEntity(ParticleCapabilities.PHASE_STORAGE, MACHINE_BLOCK_ENTITY.get(), (machine, side) -> machine.phaseStorage());
         event.registerBlockEntity(ParticleCapabilities.MIXED_STORAGE, CREATIVE_PARTICLE_BLOCK_ENTITY.get(), (source, side) -> source.storageForSide(side));
-        event.registerBlockEntity(Capabilities.EnergyStorage.BLOCK, MACHINE_BLOCK_ENTITY.get(), (machine, side) -> machine);
+        event.registerBlockEntity(Capabilities.EnergyStorage.BLOCK, MACHINE_BLOCK_ENTITY.get(), (machine, side) -> machine.energyStorageForSide(side));
+        event.registerBlockEntity(Capabilities.ItemHandler.BLOCK, MACHINE_BLOCK_ENTITY.get(), (machine, side) -> machine.itemHandlerForSide(side));
         event.registerBlockEntity(Capabilities.EnergyStorage.BLOCK, CREATIVE_ENERGY_BLOCK_ENTITY.get(), (source, side) -> source);
     }
 }

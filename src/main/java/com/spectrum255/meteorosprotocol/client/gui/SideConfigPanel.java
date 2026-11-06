@@ -1,34 +1,38 @@
 package com.spectrum255.meteorosprotocol.client.gui;
 
+import com.spectrum255.meteorosprotocol.machine.SideChannel;
 import com.spectrum255.meteorosprotocol.machine.SideMode;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.function.IntConsumer;
 
 /**
  * Side-configuration overlay shared by the machine screens.
  *
  * <p>The panel is a pure {@code fill}-drawn 152 x 108 sheet anchored inside the
- * container panel. It shows one channel at a time (mixed buffer or phase tanks),
- * two tabs on top and six face cells laid out like a folded box: top, bottom,
- * front (north), back (south), left (west) and right (east). Each cell colour
- * encodes the current {@link SideMode}; left click cycles forward, right click
- * backwards. The panel keeps no copy of the modes: it reads the two masks the
- * menu already synchronises, so the server stays authoritative.</p>
+ * container panel. It shows one {@link SideChannel} at a time — mixed buffer,
+ * phase tanks, FE and item slots — with one tab per registered channel and six
+ * face cells laid out like a folded box: top, bottom, front (north), back
+ * (south), left (west) and right (east). Each cell colour encodes the current
+ * {@link SideMode}; left click cycles forward, right click backwards. The panel
+ * keeps no copy of the modes: it reads the masks the menu already synchronises,
+ * so the server stays authoritative.</p>
  */
 public final class SideConfigPanel {
     public static final int WIDTH = 152;
     public static final int HEIGHT = 108;
 
     private static final int TAB_Y = 4;
-    private static final int TAB_WIDTH = 60;
+    private static final int TAB_WIDTH = 36;
     private static final int TAB_HEIGHT = 14;
-    private static final int TAB_MIXED_X = 8;
-    private static final int TAB_PHASE_X = 72;
+    private static final int TAB_STEP = 38;
+    private static final int TAB_X = 1;
 
     private static final int CELL_WIDTH = 34;
     private static final int CELL_HEIGHT = 26;
@@ -48,8 +52,8 @@ public final class SideConfigPanel {
     private static final int MODE_TEXT = 0xFFFFFFFF;
     private static final int TAB_TEXT = 0xFF404040;
 
-    private static final int CHANNEL_MIXED = 0;
-    private static final int CHANNEL_PHASE = 1;
+    /** Button base id per channel: 100 + channel * 8 (+ 100 for backwards). */
+    private static final int SIDE_BUTTON_BASE = 100;
 
     /** A face cell: world direction plus its column/row in the 3 x 3 grid. */
     private record FaceCell(Direction direction, int column, int row, String key) {
@@ -64,10 +68,16 @@ public final class SideConfigPanel {
             new FaceCell(Direction.DOWN, 1, 2, "bottom"));
 
     private boolean visible;
-    private int channel = CHANNEL_MIXED;
+    private int channel;
+    private boolean itemAvailable = true;
 
     public boolean visible() {
         return this.visible;
+    }
+
+    /** Whether this machine actually has item slots (only the intake tower does). */
+    public void setItemAvailable(boolean itemAvailable) {
+        this.itemAvailable = itemAvailable;
     }
 
     public void toggle() {
@@ -78,19 +88,20 @@ public final class SideConfigPanel {
         this.visible = false;
     }
 
-    /** Draws the dim backdrop, the sheet, both tabs and the six face cells. */
+    /** Draws the dim backdrop, the sheet, one tab per channel and the six face cells. */
     public void render(GuiGraphics graphics, Font font, int originX, int originY,
-                       int mixedMask, int phaseMask, int mouseX, int mouseY) {
+                       int[] masks, int mouseX, int mouseY) {
         int x = originX + 12;
         int y = originY + 30;
         MeteorosGui.panel(graphics, x, y, WIDTH, HEIGHT);
 
-        drawTab(graphics, font, x + TAB_MIXED_X, y + TAB_Y, channel == CHANNEL_MIXED,
-                Component.translatable("gui.meteorosprotocol.side.mixed"));
-        drawTab(graphics, font, x + TAB_PHASE_X, y + TAB_Y, channel == CHANNEL_PHASE,
-                Component.translatable("gui.meteorosprotocol.side.phase"));
+        SideChannel[] channels = SideChannel.values();
+        for (int index = 0; index < channels.length; index++) {
+            drawTab(graphics, font, x + tabX(index), y + TAB_Y, channel == index,
+                    tabLabel(channels[index]));
+        }
 
-        int mask = channel == CHANNEL_MIXED ? mixedMask : phaseMask;
+        int mask = maskFor(masks);
         for (FaceCell cell : CELLS) {
             int cellX = x + GRID_X + cell.column * CELL_STEP_X;
             int cellY = y + GRID_Y + cell.row * CELL_STEP_Y;
@@ -102,20 +113,25 @@ public final class SideConfigPanel {
 
     /** Tooltip for the hovered face cell; returns false when nothing is hovered. */
     public boolean renderTooltip(GuiGraphics graphics, Font font, int originX, int originY,
-                                 int mixedMask, int phaseMask, int mouseX, int mouseY) {
+                                 int[] masks, int mouseX, int mouseY) {
         int x = originX + 12;
         int y = originY + 30;
-        int mask = this.channel == CHANNEL_MIXED ? mixedMask : phaseMask;
+        int mask = maskFor(masks);
+        SideChannel channel = SideChannel.values()[this.channel];
         for (FaceCell cell : CELLS) {
             int cellX = x + GRID_X + cell.column * CELL_STEP_X;
             int cellY = y + GRID_Y + cell.row * CELL_STEP_Y;
             if (inside(mouseX, mouseY, cellX, cellY, CELL_WIDTH, CELL_HEIGHT)) {
-                Component line = Component.literal(
+                List<Component> lines = new ArrayList<>();
+                lines.add(Component.literal(
                         Component.translatable("gui.meteorosprotocol.side." + cell.key()).getString()
-                                + ": " + modeName(modeAt(mask, cell.direction())).getString());
-                MeteorosGui.tooltip(graphics, font,
-                        List.of(line, Component.translatable("gui.meteorosprotocol.side.hint")),
-                        mouseX, mouseY, 0xFF9A9A9A);
+                                + ": " + modeName(modeAt(mask, cell.direction())).getString()));
+                lines.add(tabLabel(channel));
+                lines.add(Component.translatable("gui.meteorosprotocol.side.hint"));
+                if (channelUnavailable()) {
+                    lines.add(Component.translatable("gui.meteorosprotocol.side.no_storage"));
+                }
+                MeteorosGui.tooltip(graphics, font, lines, mouseX, mouseY, 0xFF9A9A9A);
                 return true;
             }
         }
@@ -128,7 +144,7 @@ public final class SideConfigPanel {
      * over the widgets underneath.
      */
     public boolean mouseClicked(double mouseX, double mouseY, int button,
-                                int originX, int originY, int mixedMask, int phaseMask,
+                                int originX, int originY, int[] masks,
                                 IntConsumer sendButton) {
         if (!this.visible) {
             return false;
@@ -138,16 +154,13 @@ public final class SideConfigPanel {
         if (!inside(mouseX, mouseY, x, y, WIDTH, HEIGHT)) {
             return false;
         }
-        if (inside(mouseX, mouseY, x + TAB_MIXED_X, y + TAB_Y, TAB_WIDTH, TAB_HEIGHT)) {
-            this.channel = CHANNEL_MIXED;
-            return true;
+        for (int index = 0; index < SideChannel.values().length; index++) {
+            if (inside(mouseX, mouseY, x + tabX(index), y + TAB_Y, TAB_WIDTH, TAB_HEIGHT)) {
+                this.channel = index;
+                return true;
+            }
         }
-        if (inside(mouseX, mouseY, x + TAB_PHASE_X, y + TAB_Y, TAB_WIDTH, TAB_HEIGHT)) {
-            this.channel = CHANNEL_PHASE;
-            return true;
-        }
-        int mask = this.channel == CHANNEL_MIXED ? mixedMask : phaseMask;
-        int base = this.channel == CHANNEL_MIXED ? 100 : 108;
+        int base = SIDE_BUTTON_BASE + this.channel * 8;
         for (FaceCell cell : CELLS) {
             int cellX = x + GRID_X + cell.column * CELL_STEP_X;
             int cellY = y + GRID_Y + cell.row * CELL_STEP_Y;
@@ -161,6 +174,23 @@ public final class SideConfigPanel {
             }
         }
         return true;
+    }
+
+    private boolean channelUnavailable() {
+        return this.channel == SideChannel.ITEM.ordinal() && !this.itemAvailable;
+    }
+
+    private int maskFor(int[] masks) {
+        return masks != null && this.channel < masks.length ? masks[this.channel] : 0;
+    }
+
+    private static int tabX(int index) {
+        return TAB_X + index * TAB_STEP;
+    }
+
+    private static Component tabLabel(SideChannel channel) {
+        return Component.translatable("gui.meteorosprotocol.side."
+                + channel.name().toLowerCase(Locale.ROOT));
     }
 
     private void drawTab(GuiGraphics graphics, Font font, int x, int y, boolean selected, Component text) {
@@ -211,7 +241,7 @@ public final class SideConfigPanel {
 
     private static Component modeName(SideMode mode) {
         return Component.translatable("gui.meteorosprotocol.side.mode."
-                + mode.name().toLowerCase(java.util.Locale.ROOT));
+                + mode.name().toLowerCase(Locale.ROOT));
     }
 
     private static boolean inside(double mouseX, double mouseY, int x, int y, int width, int height) {

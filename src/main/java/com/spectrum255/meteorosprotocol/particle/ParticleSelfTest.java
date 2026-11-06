@@ -1,15 +1,19 @@
 package com.spectrum255.meteorosprotocol.particle;
 
 import com.spectrum255.meteorosprotocol.Config;
+import com.spectrum255.meteorosprotocol.MeteorosProtocol;
 import com.spectrum255.meteorosprotocol.compat.LightHeatParticleModifier;
 import com.spectrum255.meteorosprotocol.compat.TemperatureProbe;
 import com.spectrum255.meteorosprotocol.compat.TemperatureSources;
 import com.spectrum255.meteorosprotocol.machine.MachineBlockEntity;
+import com.spectrum255.meteorosprotocol.machine.SideChannel;
 import com.spectrum255.meteorosprotocol.machine.SideMode;
 import java.util.ArrayList;
 import java.util.List;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 
@@ -480,6 +484,77 @@ public final class ParticleSelfTest {
             require(MachineBlockEntity.modeAt(0, direction) == SideMode.NONE,
                     "the weather default must read NONE on every face");
         }
+
+        // Four-channel defaults per machine family.
+        MachineBlockEntity generator = new MachineBlockEntity(
+                BlockPos.ZERO, MeteorosProtocol.THERMAL_GENERATOR.get().defaultBlockState());
+        require(generator.energySideMask() == 0xAAA,
+                "generator must default to all-OUT energy");
+        require(generator.sideMode(Direction.UP, SideChannel.MIXED) == SideMode.BOTH,
+                "generator particle faces must default to BOTH");
+
+        MachineBlockEntity separator = new MachineBlockEntity(
+                BlockPos.ZERO, MeteorosProtocol.PHASE_SEPARATOR.get().defaultBlockState());
+        require(separator.energySideMask() == 0x555,
+                "separator must default to all-IN energy");
+
+        MachineBlockEntity intake = new MachineBlockEntity(
+                BlockPos.ZERO, MeteorosProtocol.PARTICLE_INTAKE.get().defaultBlockState());
+        require(intake.sideMode(Direction.UP, SideChannel.ENERGY) == SideMode.IN,
+                "intake energy faces must default to IN");
+        require(intake.sideMode(Direction.UP, SideChannel.ITEM) == SideMode.BOTH,
+                "intake item faces must default to BOTH");
+
+        MachineBlockEntity port = new MachineBlockEntity(
+                BlockPos.ZERO, MeteorosProtocol.PARTICLE_PORT.get().defaultBlockState());
+        require(port.sideMode(Direction.UP, SideChannel.ENERGY) == SideMode.NONE
+                        && port.sideMode(Direction.UP, SideChannel.ITEM) == SideMode.NONE,
+                "particle port must default to no energy/item I/O");
+        require(port.sideMode(Direction.UP, SideChannel.MIXED) == SideMode.BOTH,
+                "particle port particle faces must default to BOTH");
+
+        MachineBlockEntity weather = new MachineBlockEntity(
+                BlockPos.ZERO, MeteorosProtocol.WEATHER_STATION.get().defaultBlockState());
+        for (SideChannel channel : SideChannel.values()) {
+            require(weather.sideMode(Direction.UP, channel) == SideMode.NONE,
+                    "weather blocks must disable every channel");
+        }
+
+        // ENERGY channel gates the per-face energy capability.
+        require(intake.energyStorageForSide(Direction.UP).canReceive(),
+                "an IN energy face must be able to receive");
+        require(intake.energyStorageForSide(Direction.UP).receiveEnergy(1_000, false) == 1_000,
+                "an IN energy face must accept FE");
+        intake.setSideMode(Direction.UP, SideChannel.ENERGY, SideMode.NONE);
+        require(intake.energyStorageForSide(Direction.UP).receiveEnergy(1_000, false) == 0,
+                "a NONE energy face must reject FE");
+        require(intake.energyStorageForSide(Direction.UP).extractEnergy(100, false) == 0,
+                "a NONE energy face must not extract FE");
+        intake.setSideMode(Direction.UP, SideChannel.ENERGY, SideMode.OUT);
+        require(intake.energyStorageForSide(Direction.UP).receiveEnergy(1_000, false) == 0,
+                "an OUT energy face must reject FE");
+        require(intake.energyStorageForSide(Direction.UP).extractEnergy(250, false) == 250,
+                "an OUT energy face must extract FE");
+
+        // ITEM channel gates the intake tower's two slots; slot 0 is never extractable.
+        require(intake.itemHandlerForSide(Direction.UP) != null,
+                "the intake tower must expose an item handler");
+        require(generator.itemHandlerForSide(Direction.UP) == null,
+                "machines without item slots must not expose an item handler");
+        ItemStack filter = new ItemStack(MeteorosProtocol.FILTER_CARTRIDGE.get());
+        ItemStack canister = new ItemStack(MeteorosProtocol.CANISTER.get());
+        intake.setSideMode(Direction.UP, SideChannel.ITEM, SideMode.BOTH);
+        require(intake.itemHandlerForSide(Direction.UP).insertItem(0, filter, false).isEmpty(),
+                "a filter must insert into slot 0");
+        require(intake.itemHandlerForSide(Direction.UP).extractItem(0, 1, false).isEmpty(),
+                "slot 0 must never be extractable");
+        require(intake.itemHandlerForSide(Direction.UP).insertItem(1, canister, false).isEmpty(),
+                "a canister must insert into slot 1");
+        intake.setSideMode(Direction.UP, SideChannel.ITEM, SideMode.OUT);
+        require(intake.itemHandlerForSide(Direction.UP).insertItem(1, canister, false).getCount() == 1,
+                "an OUT item face must reject inserts");
+        require(intake.itemHandlerForSide(Direction.UP).extractItem(1, 1, false).getCount() == 1,
+                "an OUT item face must allow canister extraction");
     }
 
     private static boolean near(float actual, float expected) {

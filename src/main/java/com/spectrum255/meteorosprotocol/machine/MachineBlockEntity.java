@@ -30,7 +30,9 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.energy.IEnergyStorage;
+import net.neoforged.neoforge.items.IItemHandler;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -161,7 +163,18 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
      */
     private int sideMixedMask;
     private int sidePhaseMask;
+    private int sideEnergyMask;
+    private int sideItemMask;
     private boolean sideConfigInitialised;
+
+    /** Cached per-face energy/item views; index 6 is the {@code null} side. */
+    private final IEnergyStorage[] energyViews = new IEnergyStorage[7];
+    private final IItemHandler[] itemViews = new IItemHandler[7];
+
+    /** FE pushed through an OUT face per active-I/O window (500 FE/t). */
+    public static final int ENERGY_TRANSFER_PER_INTERVAL = 2_500;
+    /** Items moved through an ITEM face per active-I/O window. */
+    public static final int ITEM_TRANSFER_PER_INTERVAL = 4;
 
     /** Extract-only view used by the intake tower's output port. */
     private final MixedStorage extractOnly = new MixedStorage() {
@@ -188,12 +201,17 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
 
     /** Every face set to {@link SideMode#BOTH} (two bits per direction). */
     private static final int DEFAULT_ALL_BOTH = 0xFFF;
+    /** Every face set to {@link SideMode#IN}. */
+    private static final int DEFAULT_ALL_IN = 0x555;
+    /** Every face set to {@link SideMode#OUT}. */
+    private static final int DEFAULT_ALL_OUT = 0xAAA;
 
     /**
-     * Weather blocks have no particle I/O, so their faces start disabled; every
-     * other machine starts with all six faces allowing both directions. Called
-     * lazily because the block state is only reliably available after the block
-     * entity has been attached.
+     * Applies the per-machine side defaults. Weather blocks have no I/O at all;
+     * the generator only outputs FE, the separator only takes FE, the intake
+     * tower takes FE and exchanges items, and the particle port moves particles
+     * only. Called lazily because the block state is only reliably available
+     * after the block entity has been attached.
      */
     private void ensureSideConfig() {
         if (sideConfigInitialised) {
@@ -201,11 +219,32 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         }
         sideConfigInitialised = true;
         Block block = getBlockState().getBlock();
-        boolean weather = block == MeteorosProtocol.WEATHER_STATION.get()
-                || block == MeteorosProtocol.WEATHER_TANK.get();
-        int defaults = weather ? 0 : DEFAULT_ALL_BOTH;
-        sideMixedMask = defaults;
-        sidePhaseMask = defaults;
+        if (block == MeteorosProtocol.WEATHER_STATION.get()
+                || block == MeteorosProtocol.WEATHER_TANK.get()) {
+            sideMixedMask = 0;
+            sidePhaseMask = 0;
+            sideEnergyMask = 0;
+            sideItemMask = 0;
+            return;
+        }
+        sideMixedMask = DEFAULT_ALL_BOTH;
+        sidePhaseMask = DEFAULT_ALL_BOTH;
+        if (block == MeteorosProtocol.THERMAL_GENERATOR.get()) {
+            sideEnergyMask = DEFAULT_ALL_OUT;
+            sideItemMask = DEFAULT_ALL_BOTH;
+        } else if (block == MeteorosProtocol.PHASE_SEPARATOR.get()) {
+            sideEnergyMask = DEFAULT_ALL_IN;
+            sideItemMask = DEFAULT_ALL_BOTH;
+        } else if (block == MeteorosProtocol.PARTICLE_INTAKE.get()) {
+            sideEnergyMask = DEFAULT_ALL_IN;
+            sideItemMask = DEFAULT_ALL_BOTH;
+        } else if (block == MeteorosProtocol.PARTICLE_PORT.get()) {
+            sideEnergyMask = 0;
+            sideItemMask = 0;
+        } else {
+            sideEnergyMask = DEFAULT_ALL_BOTH;
+            sideItemMask = DEFAULT_ALL_BOTH;
+        }
     }
 
     /** Reads one face's mode out of a side mask. */
@@ -229,18 +268,42 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         return sidePhaseMask;
     }
 
-    public SideMode sideMode(Direction direction, SideChannel channel) {
+    public int energySideMask() {
         ensureSideConfig();
-        return modeAt(channel == SideChannel.MIXED ? sideMixedMask : sidePhaseMask, direction);
+        return sideEnergyMask;
+    }
+
+    public int itemSideMask() {
+        ensureSideConfig();
+        return sideItemMask;
+    }
+
+    /** Reads one channel's mask; all four masks share the same 2-bit layout. */
+    public int sideMask(SideChannel channel) {
+        ensureSideConfig();
+        return switch (channel) {
+            case MIXED -> sideMixedMask;
+            case PHASE -> sidePhaseMask;
+            case ENERGY -> sideEnergyMask;
+            case ITEM -> sideItemMask;
+        };
+    }
+
+    private void setMask(SideChannel channel, int mask) {
+        switch (channel) {
+            case MIXED -> sideMixedMask = mask;
+            case PHASE -> sidePhaseMask = mask;
+            case ENERGY -> sideEnergyMask = mask;
+            case ITEM -> sideItemMask = mask;
+        }
+    }
+
+    public SideMode sideMode(Direction direction, SideChannel channel) {
+        return modeAt(sideMask(channel), direction);
     }
 
     public void setSideMode(Direction direction, SideChannel channel, SideMode mode) {
-        ensureSideConfig();
-        if (channel == SideChannel.MIXED) {
-            sideMixedMask = withMode(sideMixedMask, direction, mode);
-        } else {
-            sidePhaseMask = withMode(sidePhaseMask, direction, mode);
-        }
+        setMask(channel, withMode(sideMask(channel), direction, mode));
         setChanged();
     }
 
@@ -249,12 +312,18 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         setSideMode(direction, channel, backwards ? current.previous() : current.next());
     }
 
-    private boolean allowsIn(Direction direction, SideChannel channel) {
+    private boolean allowsIn(@Nullable Direction direction, SideChannel channel) {
+        if (direction == null) {
+            return true;
+        }
         SideMode mode = sideMode(direction, channel);
         return mode == SideMode.IN || mode == SideMode.BOTH;
     }
 
-    private boolean allowsOut(Direction direction, SideChannel channel) {
+    private boolean allowsOut(@Nullable Direction direction, SideChannel channel) {
+        if (direction == null) {
+            return true;
+        }
         SideMode mode = sideMode(direction, channel);
         return mode == SideMode.OUT || mode == SideMode.BOTH;
     }
@@ -597,6 +666,125 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
             for (Phase phase : Phase.all()) {
                 if (phases[phase.index()] > 0L) {
                     pushPhaseToNeighbours(level, phase, PIPE_PHASE_MPU_PER_TRANSFER);
+                }
+            }
+        }
+        pushEnergyToNeighbours(level);
+        if (block == MeteorosProtocol.PARTICLE_INTAKE.get()) {
+            pushItemsToNeighbours(level);
+            pullItemsFromNeighbours(level);
+        }
+    }
+
+    /**
+     * Pushes FE through every face whose ENERGY mode allows output. Nothing is
+     * pulled: generators are the only FE producers, and machines configured as
+     * IN keep receiving through the normal energy capability.
+     */
+    private void pushEnergyToNeighbours(ServerLevel level) {
+        for (Direction direction : Direction.values()) {
+            if (!allowsOut(direction, SideChannel.ENERGY)) {
+                continue;
+            }
+            BlockPos neighbour = worldPosition.relative(direction);
+            if (!isActiveIoNeighbour(level, neighbour)) {
+                continue;
+            }
+            IEnergyStorage target = level.getCapability(
+                    Capabilities.EnergyStorage.BLOCK, neighbour, direction.getOpposite());
+            if (target == null) {
+                continue;
+            }
+            int budget = (int) Math.min(Integer.MAX_VALUE, Math.min(ENERGY_TRANSFER_PER_INTERVAL, energy));
+            if (budget <= 0) {
+                continue;
+            }
+            int accepted = target.receiveEnergy(budget, true);
+            if (accepted <= 0) {
+                continue;
+            }
+            accepted = target.receiveEnergy(accepted, false);
+            if (accepted > 0) {
+                energy -= accepted;
+                setChanged();
+            }
+        }
+    }
+
+    /** Pushes the canister in slot 1 through ITEM OUT faces. */
+    private void pushItemsToNeighbours(ServerLevel level) {
+        ItemStack output = items.getItem(1);
+        if (output.isEmpty()) {
+            return;
+        }
+        for (Direction direction : Direction.values()) {
+            if (!allowsOut(direction, SideChannel.ITEM)) {
+                continue;
+            }
+            BlockPos neighbour = worldPosition.relative(direction);
+            if (!isActiveIoNeighbour(level, neighbour)) {
+                continue;
+            }
+            IItemHandler target = level.getCapability(
+                    Capabilities.ItemHandler.BLOCK, neighbour, direction.getOpposite());
+            if (target == null) {
+                continue;
+            }
+            ItemStack offered = output.copyWithCount(Math.min(ITEM_TRANSFER_PER_INTERVAL, output.getCount()));
+            ItemStack leftover = offered;
+            for (int slot = 0; slot < target.getSlots() && !leftover.isEmpty(); slot++) {
+                leftover = target.insertItem(slot, leftover, true);
+            }
+            int accepted = offered.getCount() - leftover.getCount();
+            if (accepted <= 0) {
+                continue;
+            }
+            ItemStack toInsert = offered.copyWithCount(accepted);
+            for (int slot = 0; slot < target.getSlots() && !toInsert.isEmpty(); slot++) {
+                toInsert = target.insertItem(slot, toInsert, false);
+            }
+            int inserted = accepted - toInsert.getCount();
+            if (inserted > 0) {
+                items.removeItem(1, inserted);
+                items.setChanged();
+                setChanged();
+                return;
+            }
+        }
+    }
+
+    /** Pulls a filter into slot 0 or a canister into slot 1 through ITEM IN faces. */
+    private void pullItemsFromNeighbours(ServerLevel level) {
+        for (int targetSlot = 0; targetSlot < 2; targetSlot++) {
+            if (!items.getItem(targetSlot).isEmpty()) {
+                continue;
+            }
+            for (Direction direction : Direction.values()) {
+                if (!allowsIn(direction, SideChannel.ITEM)) {
+                    continue;
+                }
+                BlockPos neighbour = worldPosition.relative(direction);
+                if (!isActiveIoNeighbour(level, neighbour)) {
+                    continue;
+                }
+                IItemHandler source = level.getCapability(
+                        Capabilities.ItemHandler.BLOCK, neighbour, direction.getOpposite());
+                if (source == null) {
+                    continue;
+                }
+                for (int slot = 0; slot < source.getSlots(); slot++) {
+                    ItemStack candidate = source.extractItem(slot, ITEM_TRANSFER_PER_INTERVAL, true);
+                    if (candidate.isEmpty() || !items.canPlaceItem(targetSlot, candidate)) {
+                        continue;
+                    }
+                    ItemStack extracted = source.extractItem(slot, candidate.getCount(), false);
+                    if (extracted.isEmpty()) {
+                        continue;
+                    }
+                    items.setItem(targetSlot, extracted.copy());
+                    items.setChanged();
+                    setChanged();
+                    return;
                 }
             }
         }
@@ -1243,6 +1431,179 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         return true;
     }
 
+    /**
+     * Face-filtered view of the energy buffer for the ENERGY channel: IN faces
+     * may receive, OUT faces may extract. The internal {@code null} side keeps
+     * full access so the machine itself is unaffected by its configuration.
+     */
+    public IEnergyStorage energyStorageForSide(@Nullable Direction side) {
+        ensureSideConfig();
+        int index = side == null ? 6 : side.ordinal();
+        IEnergyStorage cached = energyViews[index];
+        if (cached == null) {
+            cached = new FaceEnergyStorage(side);
+            energyViews[index] = cached;
+        }
+        return cached;
+    }
+
+    /** Energy extraction used by the face view; the machine itself still only receives. */
+    long extractEnergyInternal(long maxExtract, boolean simulate) {
+        long moved = Math.min(Math.max(0L, maxExtract), energy);
+        if (moved <= 0L) {
+            return 0L;
+        }
+        if (!simulate) {
+            energy -= moved;
+            setChanged();
+        }
+        return moved;
+    }
+
+    private final class FaceEnergyStorage implements IEnergyStorage {
+        private final Direction side;
+
+        private FaceEnergyStorage(@Nullable Direction side) {
+            this.side = side;
+        }
+
+        @Override
+        public int receiveEnergy(int maxReceive, boolean simulate) {
+            if (!allowsIn(side, SideChannel.ENERGY)) {
+                return 0;
+            }
+            return MachineBlockEntity.this.receiveEnergy(maxReceive, simulate);
+        }
+
+        @Override
+        public int extractEnergy(int maxExtract, boolean simulate) {
+            if (!allowsOut(side, SideChannel.ENERGY)) {
+                return 0;
+            }
+            return (int) extractEnergyInternal(maxExtract, simulate);
+        }
+
+        @Override
+        public int getEnergyStored() {
+            return MachineBlockEntity.this.getEnergyStored();
+        }
+
+        @Override
+        public int getMaxEnergyStored() {
+            return MachineBlockEntity.this.getMaxEnergyStored();
+        }
+
+        @Override
+        public boolean canExtract() {
+            return allowsOut(side, SideChannel.ENERGY);
+        }
+
+        @Override
+        public boolean canReceive() {
+            return allowsIn(side, SideChannel.ENERGY);
+        }
+    }
+
+    /**
+     * Item slots exposed to automation. Only the intake tower has item slots;
+     * other machines return {@code null} so the capability is absent. Slot 0
+     * (filter cartridge) can never be extracted; slot 1 (canister) can.
+     */
+    @Nullable
+    public IItemHandler itemHandlerForSide(@Nullable Direction side) {
+        ensureSideConfig();
+        if (getBlockState().getBlock() != MeteorosProtocol.PARTICLE_INTAKE.get()) {
+            return null;
+        }
+        int index = side == null ? 6 : side.ordinal();
+        IItemHandler cached = itemViews[index];
+        if (cached == null) {
+            cached = new FaceItemHandler(side);
+            itemViews[index] = cached;
+        }
+        return cached;
+    }
+
+    private final class FaceItemHandler implements IItemHandler {
+        private final Direction side;
+
+        private FaceItemHandler(@Nullable Direction side) {
+            this.side = side;
+        }
+
+        @Override
+        public int getSlots() {
+            return 2;
+        }
+
+        @Override
+        public ItemStack getStackInSlot(int slot) {
+            return slot >= 0 && slot < 2 ? items.getItem(slot) : ItemStack.EMPTY;
+        }
+
+        @Override
+        public ItemStack insertItem(int slot, ItemStack stack, boolean simulate) {
+            if (stack.isEmpty() || slot < 0 || slot >= 2) {
+                return stack;
+            }
+            if (!allowsIn(side, SideChannel.ITEM) || !items.canPlaceItem(slot, stack)) {
+                return stack;
+            }
+            ItemStack existing = items.getItem(slot);
+            int limit = Math.min(items.getMaxStackSize(), stack.getMaxStackSize());
+            if (!existing.isEmpty()) {
+                if (!ItemStack.isSameItemSameComponents(existing, stack)) {
+                    return stack;
+                }
+                limit -= existing.getCount();
+            }
+            if (limit <= 0) {
+                return stack;
+            }
+            int moved = Math.min(limit, stack.getCount());
+            if (!simulate) {
+                if (existing.isEmpty()) {
+                    items.setItem(slot, stack.copyWithCount(moved));
+                } else {
+                    existing.grow(moved);
+                }
+                items.setChanged();
+                setChanged();
+            }
+            return stack.copyWithCount(stack.getCount() - moved);
+        }
+
+        @Override
+        public ItemStack extractItem(int slot, int amount, boolean simulate) {
+            // Slot 0 holds the filter cartridge and is never extractable, so a
+            // hopper cannot pull the tower's filter back out.
+            if (slot != 1 || amount <= 0 || !allowsOut(side, SideChannel.ITEM)) {
+                return ItemStack.EMPTY;
+            }
+            ItemStack existing = items.getItem(1);
+            if (existing.isEmpty()) {
+                return ItemStack.EMPTY;
+            }
+            int taken = Math.min(amount, existing.getCount());
+            if (!simulate) {
+                items.removeItem(1, taken);
+                items.setChanged();
+                setChanged();
+            }
+            return existing.copyWithCount(taken);
+        }
+
+        @Override
+        public int getSlotLimit(int slot) {
+            return 1;
+        }
+
+        @Override
+        public boolean isItemValid(int slot, ItemStack stack) {
+            return items.canPlaceItem(slot, stack);
+        }
+    }
+
     /** Last separator tick's intentional 5% loss, for tooltip display. */
     public long lastSeparatorLoss() {
         return lastSeparatorLoss;
@@ -1573,6 +1934,8 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         ensureSideConfig();
         tag.putInt("SideMixed", sideMixedMask);
         tag.putInt("SidePhase", sidePhaseMask);
+        tag.putInt("SideEnergy", sideEnergyMask);
+        tag.putInt("SideItem", sideItemMask);
     }
 
     @Override
@@ -1622,6 +1985,12 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         }
         if (tag.contains("SidePhase", Tag.TAG_INT)) {
             sidePhaseMask = tag.getInt("SidePhase");
+        }
+        if (tag.contains("SideEnergy", Tag.TAG_INT)) {
+            sideEnergyMask = tag.getInt("SideEnergy");
+        }
+        if (tag.contains("SideItem", Tag.TAG_INT)) {
+            sideItemMask = tag.getInt("SideItem");
         }
     }
 }

@@ -8,6 +8,7 @@ import com.spectrum255.meteorosprotocol.client.gui.PhaseBarWidget;
 import com.spectrum255.meteorosprotocol.client.gui.SideConfigPanel;
 import com.spectrum255.meteorosprotocol.item.InfiniteParticleCanisterItem;
 import com.spectrum255.meteorosprotocol.machine.MachineBlockEntity;
+import com.spectrum255.meteorosprotocol.machine.SideChannel;
 import com.spectrum255.meteorosprotocol.particle.Phase;
 import com.spectrum255.meteorosprotocol.menu.IntakeMenu;
 import net.minecraft.client.gui.GuiGraphics;
@@ -90,6 +91,7 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
         this.sideButton = this.addRenderableWidget(new IconButton(this.leftPos + SIDE_BUTTON_X,
                 this.topPos + SIDE_BUTTON_Y, ICON_BUTTON_SIZE, ICON_BUTTON_SIZE, ICON_SIDE,
                 this::sideTooltip, button -> this.sidePanel.toggle()));
+        this.sidePanel.setItemAvailable(true);
 
         this.phaseBars.clear();
         int count = Math.min(IntakeLayout.PHASE_BAR_COUNT, Phase.all().size());
@@ -223,19 +225,28 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
             graphics.fill(this.leftPos, this.topPos, this.leftPos + this.imageWidth,
                     this.topPos + this.imageHeight, 0x80000000);
             this.sidePanel.render(graphics, this.font, this.leftPos, this.topPos,
-                    this.menu.mixedMask(), this.menu.phaseMask(), mouseX, mouseY);
+                    sideMasks(), mouseX, mouseY);
             this.sidePanel.renderTooltip(graphics, this.font, this.leftPos, this.topPos,
-                    this.menu.mixedMask(), this.menu.phaseMask(), mouseX, mouseY);
+                    sideMasks(), mouseX, mouseY);
             return;
         }
         this.renderTooltip(graphics, mouseX, mouseY);
         drawTooltips(graphics, mouseX, mouseY);
     }
 
+    private int[] sideMasks() {
+        SideChannel[] channels = SideChannel.values();
+        int[] masks = new int[channels.length];
+        for (int index = 0; index < channels.length; index++) {
+            masks[index] = this.menu.sideMask(channels[index]);
+        }
+        return masks;
+    }
+
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (this.sidePanel.visible() && this.sidePanel.mouseClicked(mouseX, mouseY, button,
-                this.leftPos, this.topPos, this.menu.mixedMask(), this.menu.phaseMask(), this::sendButton)) {
+                this.leftPos, this.topPos, sideMasks(), this::sendButton)) {
             return true;
         }
         return super.mouseClicked(mouseX, mouseY, button);

@@ -55,11 +55,13 @@ public class MachineStatusMenu extends AbstractContainerMenu {
     private final int tankBase;
     private final int mixedMaskIndex;
     private final int phaseMaskIndex;
+    private final int energyMaskIndex;
+    private final int itemMaskIndex;
     private ContainerData data;
 
-    /** 3 header ints + mixed buffer + phase tanks + the two side masks. */
+    /** 3 header ints + mixed buffer + phase tanks + the four side masks. */
     public static int dataCount() {
-        return 3 + 2 * Phase.all().size() + 2;
+        return 3 + 2 * Phase.all().size() + 4;
     }
 
     public MachineStatusMenu(int containerId, Inventory inventory, MachineBlockEntity machine) {
@@ -81,6 +83,8 @@ public class MachineStatusMenu extends AbstractContainerMenu {
         this.tankBase = mixedBase + phaseCount;
         this.mixedMaskIndex = tankBase + phaseCount;
         this.phaseMaskIndex = mixedMaskIndex + 1;
+        this.energyMaskIndex = phaseMaskIndex + 1;
+        this.itemMaskIndex = energyMaskIndex + 1;
         this.syncedData = new int[dataCount()];
 
         for (int row = 0; row < 3; row++) {
@@ -147,6 +151,12 @@ public class MachineStatusMenu extends AbstractContainerMenu {
         }
         if (index == phaseMaskIndex) {
             return machine.phaseSideMask();
+        }
+        if (index == energyMaskIndex) {
+            return machine.energySideMask();
+        }
+        if (index == itemMaskIndex) {
+            return machine.itemSideMask();
         }
         return 0;
     }
@@ -230,6 +240,24 @@ public class MachineStatusMenu extends AbstractContainerMenu {
         return data(phaseMaskIndex);
     }
 
+    public int energyMask() {
+        return data(energyMaskIndex);
+    }
+
+    public int itemMask() {
+        return data(itemMaskIndex);
+    }
+
+    /** Unified accessor: one mask per {@link SideChannel}, in channel order. */
+    public int sideMask(SideChannel channel) {
+        return switch (channel) {
+            case MIXED -> mixedMask();
+            case PHASE -> phaseMask();
+            case ENERGY -> energyMask();
+            case ITEM -> itemMask();
+        };
+    }
+
     @Override
     public boolean clickMenuButton(Player player, int id) {
         if (machine == null) {
@@ -240,12 +268,12 @@ public class MachineStatusMenu extends AbstractContainerMenu {
             int encoded = id - (backwards ? SIDE_BUTTON_BASE + 100 : SIDE_BUTTON_BASE);
             int channel = encoded / 8;
             int side = encoded % 8;
-            if (channel > 1 || side >= Direction.values().length) {
+            if (channel >= SideChannel.values().length || side >= Direction.values().length) {
                 return false;
             }
             machine.cycleSideMode(
                     Direction.values()[side],
-                    channel == 0 ? SideChannel.MIXED : SideChannel.PHASE,
+                    SideChannel.values()[channel],
                     backwards);
             this.broadcastChanges();
             return true;
