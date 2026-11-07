@@ -40,7 +40,9 @@
     phase_rows: true, bar_phase: true, bar_energy: true,
     spacer: true, icon_button: true
   };
-  var DEFAULT_TITLE = { intake: '粒子进气塔', machine_status: '机器状态' };
+  /* 画布标题演示文字：与 tools/preview_gui_mock.py 同一口径（JSON 的 text 只是占位标记，
+     真正标题由语言文件 container.meteorosprotocol.<block> 提供） */
+  var DEFAULT_TITLE = { intake: '粒子进气塔', machine_status: '热力发电机' };
   var STATUS_TEXT = '工作中';
   var INVENTORY_LABEL = '玩家背包';
   var PHASE_COUNT = R.PHASES.length; /* 7 */
@@ -194,7 +196,7 @@
 
   function demoTitleText(e) {
     var t = e.text;
-    if (!t || t === 'dynamic') { return DEFAULT_TITLE[state.screen] || state.screen; }
+    if (!t || t === 'dynamic') { return DEFAULT_TITLE[state.screen] || '热力发电机'; }
     return String(t);
   }
   function demoTextFor(e) {
@@ -1106,6 +1108,16 @@
     sec.appendChild(el('p', 'prop-hint' + (warn ? ' warn' : ''), text));
   }
 
+  /** 只读字段：展示不可编辑的字段值（如 title 的文字来源），不参与编辑与历史。 */
+  function addReadonly(fields, labelText, getter) {
+    var wrap = el('div', 'prop-field wide');
+    wrap.appendChild(el('span', null, labelText));
+    var value = el('span', 'prop-value', getter() == null ? '—' : String(getter()));
+    wrap.appendChild(value);
+    fields.appendChild(wrap);
+    return value;
+  }
+
   function addActions(sec, actions) {
     var wrap = el('div', 'prop-actions');
     actions.forEach(function (action) {
@@ -1170,11 +1182,13 @@
 
     /* ── 类型专属字段 ── */
     if (e.type === 'title') {
-      var secTitle = propSection('标题内容', 'text / centered');
+      var secTitle = propSection('标题', '文字由语言文件提供');
       var fTitle = propFields(secTitle);
-      addText(fTitle, 'text（dynamic = 运行时标题）', function () { return e.text || ''; }, function (v) { e.text = v; }, { wide: true, placeholder: 'dynamic' });
       addCheck(fTitle, 'centered（水平居中）', function () { return e.centered; }, function (v) { e.centered = v; });
-      addHint(secTitle, 'centered=true 时标题按整宽居中（x 不参与渲染）；要手动摆放请先取消居中。');
+      addReadonly(fTitle, 'text（只读）', function () {
+        return (e.text && e.text !== 'dynamic') ? String(e.text) : 'dynamic · 由语言文件提供';
+      });
+      addHint(secTitle, '标题文字来自语言文件（container.meteorosprotocol.<block>），JSON 里的 text 只是占位标记，编辑器不修改它。画布演示文字：intake →「粒子进气塔」，其它界面 →「热力发电机」（与 preview_gui_mock.py 一致）。centered=true 时按整宽居中（x 不参与渲染）。');
       body.appendChild(secTitle);
     } else if (e.type === 'text') {
       var secText = propSection('文字', 'role');
@@ -1894,6 +1908,13 @@
 
   /* ═══════════════ 顶栏 / 屏幕切换 ═══════════════ */
 
+  /* 服务端对照图是 4× 预览 PNG；显示时缩放到与画布当前缩放一致，方便并排比对。 */
+  function syncCompareScale() {
+    if (dom.compareFrame.hidden) { return; }
+    dom.compareImg.style.width = (layoutW() * state.zoom) + 'px';
+    dom.compareImg.style.height = (layoutH() * state.zoom) + 'px';
+  }
+
   function setZoom(zoom) {
     state.zoom = zoom;
     Array.prototype.forEach.call(dom.zoomGroup.querySelectorAll('.seg'), function (btn) {
@@ -1901,6 +1922,7 @@
     });
     renderCanvas();
     renderReadouts();
+    syncCompareScale();
   }
 
   async function onScreenChange() {
@@ -2014,7 +2036,10 @@
       }
       var on = dom.compareToggle.checked;
       dom.compareFrame.hidden = !on;
-      if (on) { dom.compareImg.src = '/assets/preview/' + encodeURIComponent(state.screen) + '.png'; }
+      if (on) {
+        dom.compareImg.src = '/assets/preview/' + encodeURIComponent(state.screen) + '.png';
+        syncCompareScale();
+      }
     });
 
     var canvas = dom.canvas;

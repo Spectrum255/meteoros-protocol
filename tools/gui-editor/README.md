@@ -57,7 +57,7 @@ python tools/gui-editor/smoke_test.py   # 打印 ALL OK 即正常
 - 7 个粒子相：Ae `#FFFFFF`、T `#FF4A3F`、C `#5FE8FF`、V+ `#FFE14A`、V- `#9A5CFF`、Aq `#3A54E0`、Ae* `#B9BDC0`。
 - 相行填充比例 `0.62 / 0.38 / 0.30 / 0.22 / 0.16 / 0.11 / 0.05`，第 0 行画成「选中」白框。
 - 混合条 34%；FE 条 64% 并绘制 `640 kFE / 1 MFE` 居中白字。
-- 标题：`intake` → 「粒子进气塔」，其它 → 屏幕 id（例如「machine_status」）；`text` role=status → 「工作中」；背包标签 →「玩家背包」。
+- 标题：`intake` → 「粒子进气塔」，其它界面 → 「热力发电机」（与 `tools/preview_gui_mock.py` 同一口径，方便开对照图并排比对）；`text` role=status → 「工作中」；背包标签 →「玩家背包」。JSON 里的 `title.text` 只是占位标记，真实标题由语言文件提供，编辑器不修改它。
 - `spacer` 用青色虚线框 + role 标签标出（游戏中不绘制，属于编辑器标记）。
 - 字体是系统 UI 字体近似 Minecraft 8px 像素字体：**布局几何 1:1，字形不是**。
 
@@ -105,7 +105,9 @@ python tools/gui-editor/smoke_test.py   # 打印 ALL OK 即正常
 
 ### 属性栏
 
-按类型显示全部 JSON 字段：坐标/尺寸；`step/visible/w/h` 与滚动条四个数值（带「滚动条贴行区右侧」「删除滚动条」快捷按钮和联动提示）；`role`、`action`、`channel`、`hide_when`、`label`、`rows`、`hotbar`、`size`、`text`、`centered` 等。数字输入实时生效，失焦（或回车）时记入撤销历史。
+按类型显示全部 JSON 字段：坐标/尺寸；`step/visible/w/h` 与滚动条四个数值（带「滚动条贴行区右侧」「删除滚动条」快捷按钮和联动提示）；`role`、`action`、`channel`、`hide_when`、`label`、`rows`、`hotbar`、`size`、`centered` 等。数字输入实时生效，失焦（或回车）时记入撤销历史。
+
+`title` 是例外：文字由语言文件提供，属性栏只提供 `x / y / centered`，`text` 以灰色只读框显示来源（`dynamic · 由语言文件提供`），避免误以为可以在这里改文案。
 
 ### 元素树操作
 
@@ -132,7 +134,7 @@ python tools/gui-editor/smoke_test.py   # 打印 ALL OK 即正常
 
 - **保存**：`POST /api/layout/<id>`，请求体就是当前布局 JSON。成功后状态变「已同步」。
 - **Build**：`POST /api/build` 启动后台构建（`gradlew.bat build` + `tools/make-test-jar.ps1`），随后轮询 `GET /api/build/log?since=<n>&job=<id>`，日志实时写入底部日志区；完成后显示 jar 名称/字节数/测试 jar。若当前有未保存修改，会先自动保存，保存失败则取消构建。
-- **服务端参照图**：如果服务端提供 `GET /assets/preview/<id>.png`，工具条右侧「服务端对照图」会自动启用并并排显示；当前 `server.py` 没有该路由，因此该开关保持禁用（可选功能）。
+- **服务端参照图**：`server.py` 已提供 `GET /assets/preview/<id>.png`（文件缺失或比布局 JSON 旧时自动重跑 `preview_gui_mock.py` 重新生成 4× 预览）。编辑器启动时探测该地址，可用时启用工具条右侧「服务端对照图」开关；勾选后画布右侧并排显示对照图，并缩放到与当前画布相同的显示尺寸（1×/2×/3× 同步）。对照图是**整张 PNG 等比缩放**，因此相行区的滚动条、条形填充、文字等细节都会跟着当前缩放变化，不会只缩画布。
 
 ---
 
@@ -156,7 +158,7 @@ GET  /assets/icons/<name>.png
 
 | type | 字段 | 说明 |
 | --- | --- | --- |
-| `title` | `text`、`centered?` | 标题；`text` 为 `"dynamic"`（屏幕名）或 lang key；`centered: true` 时按整宽居中 |
+| `title` | `text`、`centered?` | 标题；`text` 只是占位标记（`"dynamic"` 或 lang key），真实文字由语言文件提供，编辑器只读展示、只调 `x/y/centered`；`centered: true` 时按整宽居中 |
 | `text` | `role` | 状态文字（如 `status`），`text` 字段可放演示/固定文本 |
 | `phase_rows` | `w`、`h`、`step`、`visible`、`scrollbar{x,y,w,h}` | `h` = 单行高，行区总高 = `step × visible`；`visible` 是可见行数 |
 | `bar_phase` | `w`、`h`、`channel`、`hide_when?` | 相/混合条；`channel: "mixed"`；`hide_when` 为运行期隐藏条件名 |
@@ -179,7 +181,7 @@ GET  /assets/icons/<name>.png
 - `bar_phase` 的 `hide_when` 只在属性栏中可编辑，画布始终绘制（不模拟运行期隐藏）。
 - `phase_rows` 滚动条按游戏逻辑只在相数 > `visible` 时绘制；编辑器选中该元素时会补一个虚线编辑框，方便调位置。
 - 编辑器不执行游戏逻辑（tooltip、相罐数值、按钮状态等不模拟），只负责布局。
-- 对照图依赖服务端可选路由（当前未提供）；Build 会真实写 `build/libs/` 与测试 jar，构建期间不要同时跑别的 Gradle 构建。
+- 对照图由 `preview_gui_mock.py` 生成（4×；文件缺失或比布局 JSON 旧时服务端自动重新生成）；Build 会真实写 `build/libs/` 与测试 jar，构建期间不要同时跑别的 Gradle 构建。
 
 ---
 

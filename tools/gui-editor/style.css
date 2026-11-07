@@ -589,6 +589,20 @@ kbd {
 }
 .prop-field.check-field > span { order: 2; }
 
+/* 只读字段值（如 title 的文字来源）：看起来像禁用的输入框，不可编辑 */
+.prop-field .prop-value {
+  width: 100%;
+  font: 11px var(--mono);
+  line-height: 1.4;
+  padding: 4px 6px;
+  color: var(--text-faint);
+  background: var(--bg-deep);
+  border: 1px solid var(--border-soft);
+  border-radius: 4px;
+  word-break: break-all;
+  user-select: text;
+}
+
 .prop-actions {
   display: flex;
   flex-wrap: wrap;
