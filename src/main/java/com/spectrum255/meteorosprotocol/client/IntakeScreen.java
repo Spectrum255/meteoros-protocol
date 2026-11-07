@@ -337,6 +337,9 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
         graphics.flush();
         this.renderTooltip(graphics, mouseX, mouseY);
         drawTooltips(graphics, mouseX, mouseY);
+        // Submit our tooltip before the screen returns: the item icons are batched as well
+        // and must not be flushed on top of the tooltip afterwards.
+        graphics.flush();
     }
 
     @Override

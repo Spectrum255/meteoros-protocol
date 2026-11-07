@@ -327,6 +327,9 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
         graphics.flush();
         this.renderTooltip(graphics, mouseX, mouseY);
         drawTooltips(graphics, mouseX, mouseY);
+        // Submit our tooltip before the screen returns: the phase-row labels are batched
+        // separately and must not be flushed on top of the tooltip afterwards.
+        graphics.flush();
     }
 
     @Override

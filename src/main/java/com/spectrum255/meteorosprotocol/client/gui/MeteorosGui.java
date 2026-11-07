@@ -393,10 +393,16 @@ public final class MeteorosGui {
         g.fill(x - 4, bottom - 1, right, bottom, TOOLTIP_BORDER_DARK);
         g.fill(x - 4, y - 4, x - 3, bottom, TOOLTIP_BORDER_LIGHT);
         g.fill(right - 1, y - 4, right, bottom, TOOLTIP_BORDER_DARK);
+        // Quads (RenderType.gui) and text live in different vertex buffers of the same
+        // GuiGraphics batch, and the batch is flushed per render type rather than in draw
+        // order. Without this flush the row labels drawn earlier can be submitted after
+        // the tooltip background, making them appear on top of the tooltip.
+        g.flush();
         for (int index = 0; index < lines.size(); index++) {
             int color = index == 0 ? 0xFFFFFFFF : secondaryColor;
             g.drawString(font, lines.get(index), x, y + index * lineHeight, color, true);
         }
+        g.flush();
     }
 
     private static void blit(GuiGraphics g, ResourceLocation tex, int x, int y, int w, int h,
