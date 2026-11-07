@@ -2,8 +2,8 @@ package com.spectrum255.meteorosprotocol.client;
 
 import com.spectrum255.meteorosprotocol.MeteorosProtocol;
 import com.spectrum255.meteorosprotocol.Config;
+import com.spectrum255.meteorosprotocol.client.gui.GuiLayout;
 import com.spectrum255.meteorosprotocol.client.gui.IconButton;
-import com.spectrum255.meteorosprotocol.client.gui.IntakeLayout;
 import com.spectrum255.meteorosprotocol.client.gui.MeteorosGui;
 import com.spectrum255.meteorosprotocol.client.gui.PhaseRowWidget;
 import com.spectrum255.meteorosprotocol.client.gui.SideConfigPanel;
@@ -25,31 +25,27 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Intake tower screen: 176 x 180, vanilla-styled container panel with a wide
+ * Intake tower screen: 176 x 224, vanilla-styled container panel with a wide
  * phase list holding one scrolling horizontal row per registered phase (six core
  * phases plus impure aetheron, so seven today), a separate mixed-buffer bar,
  * one FE bar, two slots and three 20 x 20 icon buttons.
  *
+ * <p>Every coordinate comes from {@link GuiLayout} ({@code gui/intake.json});
+ * the loader falls back to the built-in layout when the file is missing or
+ * invalid, so this screen never fails to open.</p>
+ *
  * <p>The phase rows are real {@link PhaseRowWidget}s, so selecting a phase uses
- * vanilla widget dispatch (button id {@code 2 + phase.index()}); four rows are
+ * vanilla widget dispatch (button id {@code 2 + phase.index()}); seven rows are
  * visible at once and the mouse wheel scrolls the rest. The selected row gets a
  * 1 px white frame. The extract button pumps the selected phase into the
  * canister in slot 1, phase tank first, mixed buffer second.</p>
  */
 public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
-    private static final int TITLE_Y = 6;
     private static final int TITLE_COLOR = 0xFF404040;
     private static final int GHOST = 0x66C8D0D8;
     private static final int FE_COLOR = 0xFFFF0000;
     /** The mixed buffer always uses one fixed grey; it is a summed pool, not a phase. */
     private static final int MIXED_COLOR = 0xFF8B8B8B;
-
-    /** 20 x 20 square icon buttons on the right of the content band. */
-    private static final int ICON_BUTTON_SIZE = 20;
-    private static final int ICON_BUTTON_X = IntakeLayout.BUTTON_X;
-    private static final int ICON_TOGGLE_Y = 18;
-    private static final int ICON_REDSTONE_Y = 40;
-    private static final int ICON_EXTRACT_Y = 62;
 
     private static final String ICON_ROOT = "textures/gui/";
     private static final ResourceLocation ICON_POWER_ON = icon("icon_power");
@@ -61,13 +57,9 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
     private static final ResourceLocation ICON_SIDE = icon("icon_side");
     private static final ResourceLocation ICON_AUTOIO_ON = icon("icon_autoio");
     private static final ResourceLocation ICON_AUTOIO_OFF = icon("icon_autoio_off");
-    /** Side-config entry button sits in the top-right of the panel, above the reserved band. */
-    private static final int SIDE_BUTTON_X = 152;
-    private static final int SIDE_BUTTON_Y = 4;
-    /** Auto-I/O toggle sits just left of the side-config button. */
-    private static final int AUTOIO_BUTTON_X = 132;
-    private static final int AUTOIO_BUTTON_Y = 4;
 
+    /** Geometry of this screen, loaded from {@code gui/intake.json} with a built-in fallback. */
+    private final GuiLayout layout;
     private final List<PhaseRowWidget> phaseRows = new ArrayList<>();
     /** First visible phase row; clamped to {@code [0, size - 4]}. */
     private int phaseScroll;
@@ -80,8 +72,9 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
 
     public IntakeScreen(IntakeMenu menu, Inventory inventory, Component title) {
         super(menu, inventory, title);
-        this.imageWidth = IntakeLayout.WIDTH;
-        this.imageHeight = IntakeLayout.HEIGHT;
+        this.layout = GuiLayout.load(GuiLayout.INTAKE);
+        this.imageWidth = this.layout.width();
+        this.imageHeight = this.layout.height();
     }
 
     private static ResourceLocation icon(String name) {
@@ -91,34 +84,45 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
     @Override
     protected void init() {
         super.init();
-        int buttonX = this.leftPos + ICON_BUTTON_X;
-        this.toggleButton = this.addRenderableWidget(new IconButton(buttonX, this.topPos + ICON_TOGGLE_Y,
-                ICON_BUTTON_SIZE, ICON_BUTTON_SIZE, this::powerIcon, this::powerTooltip, button -> sendButton(0)));
-        this.redstoneButton = this.addRenderableWidget(new IconButton(buttonX, this.topPos + ICON_REDSTONE_Y,
-                ICON_BUTTON_SIZE, ICON_BUTTON_SIZE, this::redstoneIcon, this::redstoneTooltip,
+        GuiLayout.Rect toggleRect = this.layout.iconButton("toggle");
+        GuiLayout.Rect redstoneRect = this.layout.iconButton("redstone");
+        GuiLayout.Rect extractRect = this.layout.iconButton("extract");
+        GuiLayout.Rect sideRect = this.layout.iconButton("side_config");
+        GuiLayout.Rect autoIoRect = this.layout.iconButton("auto_io");
+        this.toggleButton = this.addRenderableWidget(new IconButton(
+                this.leftPos + toggleRect.x(), this.topPos + toggleRect.y(),
+                toggleRect.w(), toggleRect.h(), this::powerIcon, this::powerTooltip,
+                button -> sendButton(0)));
+        this.redstoneButton = this.addRenderableWidget(new IconButton(
+                this.leftPos + redstoneRect.x(), this.topPos + redstoneRect.y(),
+                redstoneRect.w(), redstoneRect.h(), this::redstoneIcon, this::redstoneTooltip,
                 button -> sendButton(1)));
-        this.extractButton = this.addRenderableWidget(new IconButton(buttonX, this.topPos + ICON_EXTRACT_Y,
-                ICON_BUTTON_SIZE, ICON_BUTTON_SIZE, ICON_EXTRACT, this::extractTooltip,
+        this.extractButton = this.addRenderableWidget(new IconButton(
+                this.leftPos + extractRect.x(), this.topPos + extractRect.y(),
+                extractRect.w(), extractRect.h(), ICON_EXTRACT, this::extractTooltip,
                 button -> sendButton(this.menu.extractButtonId())));
-        this.sideButton = this.addRenderableWidget(new IconButton(this.leftPos + SIDE_BUTTON_X,
-                this.topPos + SIDE_BUTTON_Y, ICON_BUTTON_SIZE, ICON_BUTTON_SIZE, ICON_SIDE,
-                this::sideTooltip, button -> this.sidePanel.toggle()));
-        this.autoIoButton = this.addRenderableWidget(new IconButton(this.leftPos + AUTOIO_BUTTON_X,
-                this.topPos + AUTOIO_BUTTON_Y, ICON_BUTTON_SIZE, ICON_BUTTON_SIZE, this::autoIoIcon,
-                this::autoIoTooltip, button -> sendButton(this.menu.autoIoButtonId())));
+        this.sideButton = this.addRenderableWidget(new IconButton(
+                this.leftPos + sideRect.x(), this.topPos + sideRect.y(),
+                sideRect.w(), sideRect.h(), ICON_SIDE, this::sideTooltip,
+                button -> this.sidePanel.toggle()));
+        this.autoIoButton = this.addRenderableWidget(new IconButton(
+                this.leftPos + autoIoRect.x(), this.topPos + autoIoRect.y(),
+                autoIoRect.w(), autoIoRect.h(), this::autoIoIcon, this::autoIoTooltip,
+                button -> sendButton(this.menu.autoIoButtonId())));
         this.sidePanel.setItemAvailable(true);
 
         this.phaseRows.clear();
         this.phaseScroll = 0;
         int count = Phase.all().size();
-        int rowX = this.leftPos + IntakeLayout.PHASE_ROW_X;
+        GuiLayout.PhaseRows rows = this.layout.phaseRows();
+        int rowX = this.leftPos + rows.area().x();
         for (int i = 0; i < count; i++) {
             final int index = i;
             PhaseRowWidget row = this.addRenderableWidget(new PhaseRowWidget(
                     rowX,
-                    this.topPos + IntakeLayout.PHASE_ROW_Y,
-                    IntakeLayout.PHASE_ROW_WIDTH,
-                    IntakeLayout.PHASE_ROW_HEIGHT,
+                    this.topPos + rows.area().y(),
+                    rows.area().w(),
+                    rows.area().h(),
                     index,
                     () -> phaseFill(index),
                     () -> Phase.all().get(index).argb(),
@@ -185,36 +189,39 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
     private void updateRowLayout() {
         List<Phase> phases = displayedPhases();
         int total = phases.size();
-        int maxScroll = Math.max(0, total - IntakeLayout.PHASE_ROW_VISIBLE);
+        GuiLayout.PhaseRows rows = this.layout.phaseRows();
+        int maxScroll = Math.max(0, total - rows.visible());
         this.phaseScroll = Mth.clamp(this.phaseScroll, 0, maxScroll);
         for (PhaseRowWidget row : this.phaseRows) {
             row.visible = false;
         }
-        int top = this.topPos + IntakeLayout.PHASE_ROW_Y;
+        int top = this.topPos + rows.area().y();
         for (int position = 0; position < total; position++) {
             int slot = position - this.phaseScroll;
-            if (slot < 0 || slot >= IntakeLayout.PHASE_ROW_VISIBLE) {
+            if (slot < 0 || slot >= rows.visible()) {
                 continue;
             }
             PhaseRowWidget row = this.phaseRows.get(phases.get(position).index());
             row.visible = true;
-            row.setY(top + slot * IntakeLayout.PHASE_ROW_STEP);
+            row.setY(top + slot * rows.step());
         }
     }
 
     /** 2 px wheel-only scrollbar; drawn in the background so it never blocks the rows. */
     private void drawPhaseScrollbar(GuiGraphics graphics, int x, int y) {
+        GuiLayout.PhaseRows rows = this.layout.phaseRows();
         int total = displayedPhases().size();
-        if (total <= IntakeLayout.PHASE_ROW_VISIBLE) {
+        if (total <= rows.visible()) {
             return;
         }
-        int barX = x + IntakeLayout.PHASE_SCROLLBAR_X;
-        int barY = y + IntakeLayout.PHASE_SCROLLBAR_Y;
-        int barWidth = IntakeLayout.PHASE_SCROLLBAR_WIDTH;
-        int barHeight = IntakeLayout.PHASE_SCROLLBAR_HEIGHT;
+        GuiLayout.Rect scrollbar = rows.scrollbar();
+        int barX = x + scrollbar.x();
+        int barY = y + scrollbar.y();
+        int barWidth = scrollbar.w();
+        int barHeight = scrollbar.h();
         graphics.fill(barX, barY, barX + barWidth, barY + barHeight, MeteorosGui.SLOT_DARK);
-        int thumbHeight = Math.max(6, barHeight * IntakeLayout.PHASE_ROW_VISIBLE / total);
-        int maxScroll = total - IntakeLayout.PHASE_ROW_VISIBLE;
+        int thumbHeight = Math.max(6, barHeight * rows.visible() / total);
+        int maxScroll = total - rows.visible();
         int thumbY = barY + (int) Math.round((double) (barHeight - thumbHeight) * this.phaseScroll / maxScroll);
         graphics.fill(barX, thumbY, barX + barWidth, thumbY + thumbHeight, MeteorosGui.SLOT_BODY);
     }
@@ -223,49 +230,56 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
     protected void renderBg(GuiGraphics graphics, float partialTick, int mouseX, int mouseY) {
         int x = this.leftPos;
         int y = this.topPos;
-        MeteorosGui.panel(graphics, x, y, IntakeLayout.WIDTH, IntakeLayout.HEIGHT);
+        MeteorosGui.panel(graphics, x, y, this.imageWidth, this.imageHeight);
 
-        MeteorosGui.phaseBarH(graphics, x + IntakeLayout.MIXED_BAR_X, y + IntakeLayout.MIXED_BAR_Y,
-                IntakeLayout.MIXED_BAR_WIDTH, IntakeLayout.MIXED_BAR_HEIGHT,
+        GuiLayout.Rect mixedRect = this.layout.barPhase("mixed").rect();
+        MeteorosGui.phaseBarH(graphics, x + mixedRect.x(), y + mixedRect.y(),
+                mixedRect.w(), mixedRect.h(),
                 (float) ((double) this.menu.mixedTotal() / (double) MachineBlockEntity.MIXED_CAPACITY),
                 MIXED_COLOR, 0xFF555555);
 
         drawPhaseScrollbar(graphics, x, y);
+        GuiLayout.PhaseRows rows = this.layout.phaseRows();
         if (displayedPhases().isEmpty()) {
             graphics.drawString(this.font,
                     Component.translatable("gui.meteorosprotocol.intake.empty"),
-                    x + IntakeLayout.PHASE_ROW_X, y + IntakeLayout.PHASE_ROW_Y, 0xFF808080, false);
+                    x + rows.area().x(), y + rows.area().y(), 0xFF808080, false);
         }
 
-        MeteorosGui.barHWithText(graphics, this.font, x + IntakeLayout.FE_X, y + IntakeLayout.FE_Y,
-                IntakeLayout.FE_WIDTH, IntakeLayout.FE_HEIGHT,
+        GuiLayout.Rect energyRect = this.layout.barEnergy();
+        MeteorosGui.barHWithText(graphics, this.font, x + energyRect.x(), y + energyRect.y(),
+                energyRect.w(), energyRect.h(),
                 (float) ((double) this.menu.energy() / (double) IntakeMenu.ENERGY_CAPACITY),
                 FE_COLOR, 0xFF555555,
                 Component.literal(ParticleFormat.formatFE(this.menu.energy()) + " / "
                         + ParticleFormat.formatFE(IntakeMenu.ENERGY_CAPACITY)));
 
+        GuiLayout.Rect filterRect = this.layout.slotRect("filter");
         boolean filterHovered = inside(mouseX, mouseY,
-                x + IntakeLayout.FILTER_SLOT_X, y + IntakeLayout.FILTER_SLOT_Y, 16, 16);
-        MeteorosGui.slot(graphics, x + IntakeLayout.FILTER_SLOT_X, y + IntakeLayout.FILTER_SLOT_Y, filterHovered);
+                x + filterRect.x(), y + filterRect.y(), filterRect.w(), filterRect.h());
+        MeteorosGui.slot(graphics, x + filterRect.x(), y + filterRect.y(), filterHovered);
+        GuiLayout.Rect canisterRect = this.layout.slotRect("canister");
         boolean loadHovered = inside(mouseX, mouseY,
-                x + IntakeLayout.LOAD_SLOT_X, y + IntakeLayout.LOAD_SLOT_Y, 16, 16);
-        MeteorosGui.slot(graphics, x + IntakeLayout.LOAD_SLOT_X, y + IntakeLayout.LOAD_SLOT_Y, loadHovered);
+                x + canisterRect.x(), y + canisterRect.y(), canisterRect.w(), canisterRect.h());
+        MeteorosGui.slot(graphics, x + canisterRect.x(), y + canisterRect.y(), loadHovered);
 
-        for (int row = 0; row < 3; row++) {
+        GuiLayout.InventorySpec inventory = this.layout.inventory();
+        int[] inventoryRowY = inventory.rows();
+        for (int row = 0; row < inventoryRowY.length; row++) {
             for (int col = 0; col < 9; col++) {
-                int slotX = x + IntakeLayout.INVENTORY_X + col * IntakeLayout.INVENTORY_STEP;
-                int slotY = y + IntakeLayout.INVENTORY_Y + row * IntakeLayout.INVENTORY_STEP;
+                int slotX = x + inventory.gridX() + col * inventory.step();
+                int slotY = y + inventoryRowY[row];
                 MeteorosGui.slot(graphics, slotX, slotY, inside(mouseX, mouseY, slotX, slotY, 16, 16));
             }
         }
         for (int col = 0; col < 9; col++) {
-            int slotX = x + IntakeLayout.INVENTORY_X + col * IntakeLayout.INVENTORY_STEP;
-            int slotY = y + IntakeLayout.HOTBAR_Y;
+            int slotX = x + inventory.gridX() + col * inventory.step();
+            int slotY = y + inventory.hotbar();
             MeteorosGui.slot(graphics, slotX, slotY, inside(mouseX, mouseY, slotX, slotY, 16, 16));
         }
 
         if (this.menu.getSlot(0).getItem().isEmpty()) {
-            drawGhostFilter(graphics, x + IntakeLayout.FILTER_SLOT_X, y + IntakeLayout.FILTER_SLOT_Y);
+            drawGhostFilter(graphics, x + filterRect.x(), y + filterRect.y());
         }
     }
 
@@ -307,10 +321,22 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
 
     @Override
     protected void renderLabels(GuiGraphics graphics, int mouseX, int mouseY) {
-        // Vanilla container title position: 8 px from the panel's left edge.
-        graphics.drawString(this.font, this.title, 8, TITLE_Y, TITLE_COLOR, false);
+        drawTitle(graphics);
+        GuiLayout.InventorySpec inventory = this.layout.inventory();
         MeteorosGui.label(graphics, this.font, this.playerInventoryTitle,
-                IntakeLayout.INVENTORY_LABEL_X, IntakeLayout.INVENTORY_LABEL_Y);
+                inventory.labelX(), inventory.labelY());
+    }
+
+    /** Draws the panel title at the layout position, centred when the layout asks for it. */
+    private void drawTitle(GuiGraphics graphics) {
+        GuiLayout.Title title = this.layout.title();
+        Component text = GuiLayout.DYNAMIC_TEXT.equals(title.text())
+                ? this.title
+                : Component.translatable(title.text());
+        int titleX = title.centered()
+                ? (this.imageWidth - this.font.width(text)) / 2
+                : title.x();
+        graphics.drawString(this.font, text, titleX, title.y(), TITLE_COLOR, false);
     }
 
     @Override
@@ -382,12 +408,13 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
         if (this.sidePanel.visible()) {
             return true;
         }
-        if (inside(mouseX, mouseY, this.leftPos + IntakeLayout.PHASE_ROW_X,
-                this.topPos + IntakeLayout.PHASE_ROW_Y,
-                IntakeLayout.PHASE_ROW_WIDTH + IntakeLayout.PHASE_SCROLLBAR_WIDTH + 2,
-                IntakeLayout.PHASE_ROW_WINDOW_HEIGHT)) {
+        GuiLayout.PhaseRows rows = this.layout.phaseRows();
+        if (inside(mouseX, mouseY, this.leftPos + rows.area().x(),
+                this.topPos + rows.area().y(),
+                rows.area().w() + rows.scrollbar().w() + 2,
+                rows.windowHeight())) {
             int total = displayedPhases().size();
-            int maxScroll = Math.max(0, total - IntakeLayout.PHASE_ROW_VISIBLE);
+            int maxScroll = Math.max(0, total - rows.visible());
             if (maxScroll > 0) {
                 int direction = scrollY > 0.0D ? -1 : 1;
                 int next = Mth.clamp(this.phaseScroll + direction, 0, maxScroll);
@@ -427,29 +454,35 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
 
         int x = this.leftPos;
         int y = this.topPos;
-        if (inside(mouseX, mouseY, x + IntakeLayout.MIXED_BAR_X, y + IntakeLayout.MIXED_BAR_Y,
-                IntakeLayout.MIXED_BAR_WIDTH, IntakeLayout.MIXED_BAR_HEIGHT)) {
+        GuiLayout.Rect mixedRect = this.layout.barPhase("mixed").rect();
+        if (inside(mouseX, mouseY, x + mixedRect.x(), y + mixedRect.y(),
+                mixedRect.w(), mixedRect.h())) {
             String line = Component.translatable("gui.meteorosprotocol.intake.mixed").getString()
                     + ": " + ParticleFormat.formatPlain(this.menu.mixedTotal(), "mPU")
                     + " / " + ParticleFormat.formatPlain(MachineBlockEntity.MIXED_CAPACITY, "mPU");
             MeteorosGui.tooltip(graphics, this.font, Component.literal(line), mouseX, mouseY);
             return;
         }
-        if (inside(mouseX, mouseY, x + IntakeLayout.FE_X, y + IntakeLayout.FE_Y,
-                IntakeLayout.FE_WIDTH, IntakeLayout.FE_HEIGHT)) {
+        GuiLayout.Rect energyRect = this.layout.barEnergy();
+        if (inside(mouseX, mouseY, x + energyRect.x(), y + energyRect.y(),
+                energyRect.w(), energyRect.h())) {
             String line = "FE " + ParticleFormat.formatPlain(this.menu.energy(), "FE") + " / "
                     + ParticleFormat.formatPlain(IntakeMenu.ENERGY_CAPACITY, "FE");
             MeteorosGui.tooltip(graphics, this.font, Component.literal(line), mouseX, mouseY);
             return;
         }
-        if (inside(mouseX, mouseY, x + IntakeLayout.FILTER_SLOT_X, y + IntakeLayout.FILTER_SLOT_Y, 16, 16)) {
+        GuiLayout.Rect filterRect = this.layout.slotRect("filter");
+        if (inside(mouseX, mouseY, x + filterRect.x(), y + filterRect.y(),
+                filterRect.w(), filterRect.h())) {
             if (this.menu.getSlot(0).getItem().isEmpty()) {
                 MeteorosGui.tooltip(graphics, this.font,
                         Component.translatable("gui.meteorosprotocol.intake.filter"), mouseX, mouseY);
             }
             return;
         }
-        if (inside(mouseX, mouseY, x + IntakeLayout.LOAD_SLOT_X, y + IntakeLayout.LOAD_SLOT_Y, 16, 16)) {
+        GuiLayout.Rect canisterRect = this.layout.slotRect("canister");
+        if (inside(mouseX, mouseY, x + canisterRect.x(), y + canisterRect.y(),
+                canisterRect.w(), canisterRect.h())) {
             if (this.menu.getSlot(1).getItem().isEmpty()) {
                 MeteorosGui.tooltip(graphics, this.font,
                         Component.translatable("gui.meteorosprotocol.intake.loading"), mouseX, mouseY);

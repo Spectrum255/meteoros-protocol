@@ -11,6 +11,8 @@ public final class IntakeLayout {
 
     /** Title text top edge; 8 px font, no shadow, colour 0xFF404040. */
     public static final int TITLE_Y = 6;
+    /** Left edge of the title when it is drawn left-aligned instead of centred. */
+    public static final int TITLE_X = 8;
 
     /**
      * Phase-tank bars. Up to six phases use the historical 10 px bar with an
@@ -102,6 +104,21 @@ public final class IntakeLayout {
     public static final int BUTTON_REDSTONE_Y = 43;
     /** Extract button: pumps the selected phase into the canister in slot 1. */
     public static final int BUTTON_EXTRACT_Y = 67;
+
+    /**
+     * The 20 x 20 square icon buttons actually drawn by the screen. The
+     * {@code BUTTON_*} constants above are the older 60 x 16 stack that no
+     * longer matches the art; keep them for reference, the screen reads these.
+     */
+    public static final int ICON_BUTTON_SIZE = 20;
+    public static final int ICON_BUTTON_TOGGLE_Y = 18;
+    public static final int ICON_BUTTON_REDSTONE_Y = 40;
+    public static final int ICON_BUTTON_EXTRACT_Y = 62;
+    /** Auto-I/O toggle and side-config entry sit in the panel's top-right corner. */
+    public static final int AUTOIO_BUTTON_X = 132;
+    public static final int AUTOIO_BUTTON_Y = 4;
+    public static final int SIDE_BUTTON_X = 152;
+    public static final int SIDE_BUTTON_Y = 4;
 
     /**
      * RESERVED BAND — do not fill, do not shrink the window.

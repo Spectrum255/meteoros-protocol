@@ -1,7 +1,7 @@
 package com.spectrum255.meteorosprotocol.menu;
 
 import com.spectrum255.meteorosprotocol.MeteorosProtocol;
-import com.spectrum255.meteorosprotocol.client.gui.IntakeLayout;
+import com.spectrum255.meteorosprotocol.client.gui.GuiLayout;
 import com.spectrum255.meteorosprotocol.machine.MachineBlock;
 import com.spectrum255.meteorosprotocol.machine.MachineBlockEntity;
 import com.spectrum255.meteorosprotocol.machine.SideChannel;
@@ -92,17 +92,23 @@ public class MachineStatusMenu extends AbstractContainerMenu {
         this.arrivalBase = autoIoIndex + 1;
         this.syncedData = new int[dataCount()];
 
+        // Inventory coordinates come from the same GUI layout the screen draws with.
+        GuiLayout.InventorySpec inventoryLayout = GuiLayout
+                .load(GuiLayout.MACHINE_STATUS, this.clientSide).inventory();
+        int[] inventoryRows = inventoryLayout.rows();
         for (int row = 0; row < 3; row++) {
+            int rowY = row < inventoryRows.length
+                    ? inventoryRows[row]
+                    : inventoryRows[0] + row * inventoryLayout.step();
             for (int col = 0; col < 9; col++) {
                 this.addSlot(new Slot(inventory, col + row * 9 + 9,
-                        IntakeLayout.INVENTORY_X + col * IntakeLayout.INVENTORY_STEP,
-                        IntakeLayout.INVENTORY_Y + row * IntakeLayout.INVENTORY_STEP));
+                        inventoryLayout.gridX() + col * inventoryLayout.step(), rowY));
             }
         }
         for (int col = 0; col < 9; col++) {
             this.addSlot(new Slot(inventory, col,
-                    IntakeLayout.INVENTORY_X + col * IntakeLayout.INVENTORY_STEP,
-                    IntakeLayout.HOTBAR_Y));
+                    inventoryLayout.gridX() + col * inventoryLayout.step(),
+                    inventoryLayout.hotbar()));
         }
 
         this.data = new ContainerData() {

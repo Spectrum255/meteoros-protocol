@@ -1,0 +1,106 @@
+{
+  "schema": 1,
+  "id": "intake",
+  "size": [176, 224],
+  "elements": [
+    {
+      "type": "title",
+      "x": 8,
+      "y": 6,
+      "text": "dynamic",
+      "centered": true
+    },
+    {
+      "type": "phase_rows",
+      "x": 8,
+      "y": 19,
+      "w": 62,
+      "h": 10,
+      "step": 11,
+      "visible": 7,
+      "scrollbar": {
+        "x": 71,
+        "y": 19,
+        "w": 2,
+        "h": 77
+      }
+    },
+    {
+      "type": "bar_phase",
+      "x": 8,
+      "y": 100,
+      "w": 60,
+      "h": 6,
+      "channel": "mixed"
+    },
+    {
+      "type": "bar_energy",
+      "x": 8,
+      "y": 110,
+      "w": 96,
+      "h": 8
+    },
+    {
+      "type": "slot",
+      "x": 76,
+      "y": 20,
+      "role": "filter"
+    },
+    {
+      "type": "slot",
+      "x": 76,
+      "y": 44,
+      "role": "canister"
+    },
+    {
+      "type": "icon_button",
+      "x": 112,
+      "y": 18,
+      "size": 20,
+      "action": "toggle"
+    },
+    {
+      "type": "icon_button",
+      "x": 112,
+      "y": 40,
+      "size": 20,
+      "action": "redstone"
+    },
+    {
+      "type": "icon_button",
+      "x": 112,
+      "y": 62,
+      "size": 20,
+      "action": "extract"
+    },
+    {
+      "type": "icon_button",
+      "x": 132,
+      "y": 4,
+      "size": 20,
+      "action": "auto_io"
+    },
+    {
+      "type": "icon_button",
+      "x": 152,
+      "y": 4,
+      "size": 20,
+      "action": "side_config"
+    },
+    {
+      "type": "spacer",
+      "x": 134,
+      "y": 18,
+      "w": 34,
+      "h": 66,
+      "role": "upgrade_band"
+    },
+    {
+      "type": "inventory",
+      "label": [8, 128],
+      "rows": [140, 158, 176],
+      "hotbar": 198,
+      "step": 18
+    }
+  ]
+}

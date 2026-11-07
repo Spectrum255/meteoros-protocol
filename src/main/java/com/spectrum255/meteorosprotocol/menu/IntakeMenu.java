@@ -1,7 +1,7 @@
 package com.spectrum255.meteorosprotocol.menu;
 
 import com.spectrum255.meteorosprotocol.MeteorosProtocol;
-import com.spectrum255.meteorosprotocol.client.gui.IntakeLayout;
+import com.spectrum255.meteorosprotocol.client.gui.GuiLayout;
 import com.spectrum255.meteorosprotocol.item.CanisterItem;
 import com.spectrum255.meteorosprotocol.item.InfiniteParticleCanisterItem;
 import com.spectrum255.meteorosprotocol.machine.MachineBlockEntity;
@@ -84,31 +84,42 @@ public class IntakeMenu extends AbstractContainerMenu {
         this.arrivalBase = autoIoIndex + 1;
         this.syncedData = new int[dataCount()];
 
+        // Slot positions come from the same GUI layout the screen draws with, so a
+        // hit box and its slot can never drift apart. The server has no client
+        // resource manager, so it uses the built-in layout (which mirrors the file).
+        GuiLayout layout = GuiLayout.load(GuiLayout.INTAKE, this.clientSide);
+
         // Filter cartridge slot and canister loading slot.
-        this.addSlot(new Slot(container, 0, IntakeLayout.FILTER_SLOT_X, IntakeLayout.FILTER_SLOT_Y) {
+        GuiLayout.Rect filterSlot = layout.slotRect("filter");
+        this.addSlot(new Slot(container, 0, filterSlot.x(), filterSlot.y()) {
             @Override
             public boolean mayPlace(ItemStack stack) {
                 return stack.is(MeteorosProtocol.FILTER_CARTRIDGE.get());
             }
         });
-        this.addSlot(new Slot(container, 1, IntakeLayout.LOAD_SLOT_X, IntakeLayout.LOAD_SLOT_Y) {
+        GuiLayout.Rect canisterSlot = layout.slotRect("canister");
+        this.addSlot(new Slot(container, 1, canisterSlot.x(), canisterSlot.y()) {
             @Override
             public boolean mayPlace(ItemStack stack) {
                 return IntakeMenu.this.container.canPlaceItem(1, stack);
             }
         });
 
+        GuiLayout.InventorySpec inventoryLayout = layout.inventory();
+        int[] inventoryRows = inventoryLayout.rows();
         for (int row = 0; row < 3; row++) {
+            int rowY = row < inventoryRows.length
+                    ? inventoryRows[row]
+                    : inventoryRows[0] + row * inventoryLayout.step();
             for (int col = 0; col < 9; col++) {
                 this.addSlot(new Slot(inventory, col + row * 9 + 9,
-                        IntakeLayout.INVENTORY_X + col * IntakeLayout.INVENTORY_STEP,
-                        IntakeLayout.INVENTORY_Y + row * IntakeLayout.INVENTORY_STEP));
+                        inventoryLayout.gridX() + col * inventoryLayout.step(), rowY));
             }
         }
         for (int col = 0; col < 9; col++) {
             this.addSlot(new Slot(inventory, col,
-                    IntakeLayout.INVENTORY_X + col * IntakeLayout.INVENTORY_STEP,
-                    IntakeLayout.HOTBAR_Y));
+                    inventoryLayout.gridX() + col * inventoryLayout.step(),
+                    inventoryLayout.hotbar()));
         }
 
         this.data = new ContainerData() {

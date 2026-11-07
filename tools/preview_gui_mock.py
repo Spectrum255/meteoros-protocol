@@ -1,230 +1,274 @@
-"""Render a 4x mock of the intake tower GUI (176x224) with pure fills.
+"""Render a 4x mock of a Meteoros Protocol GUI straight from its layout JSON.
 
-The screens no longer blit custom GUI textures: MeteorosGui draws the vanilla
-container look with `fill` primitives (panel, sunken slots, hollow phase bars).
-Phase rows carry no text at all (amounts live in the tooltip), so the mock
-mirrors that too.
+The screens draw the vanilla container look with `fill` primitives (panel,
+sunken slots, hollow phase bars). Phase rows carry no text at all (amounts live
+in the tooltip), so the mock mirrors that too.
 
-This script mirrors the primitives so the layout / contrast can be judged
-without launching the game. Text uses a system font, so it approximates, not
-replicates, Minecraft's 8 px font.
+Source of truth: src/main/resources/assets/meteorosprotocol/gui/<id>.json
+This script is the second consumer of that data (the first is the Java loader,
+the third is tools/gui-editor), so the mock can no longer drift from the game.
 
-Usage: python tools/preview_gui_mock.py
-Output: art/gui/preview_intake_176x224.png
+Usage:
+    python tools/preview_gui_mock.py                 # intake
+    python tools/preview_gui_mock.py machine_status
+    python tools/preview_gui_mock.py intake --scale 6
+Output:
+    art/gui/preview_<id>_<w>x<h>.png
 """
 
 from __future__ import annotations
 
+import argparse
+import json
 import os
+from pathlib import Path
+
 from PIL import Image, ImageDraw, ImageFont
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-GUI = os.path.join(ROOT, "art", "gui")
-ICONS = os.path.join(GUI, "icons")
-OUT = os.path.join(GUI, "preview_intake_176x224.png")
-SCALE = 4
+ROOT = Path(__file__).resolve().parent.parent
+GUI_JSON = ROOT / "src" / "main" / "resources" / "assets" / "meteorosprotocol" / "gui"
+OUT_DIR = ROOT / "art" / "gui"
+ICONS = OUT_DIR / "icons"
 
-W, H = 176, 224
+# --- palette, mirrored from MeteorosGui ------------------------------------
+BLACK = (0, 0, 0)
+PANEL_BODY = (198, 198, 198)
+PANEL_HIGHLIGHT = (255, 255, 255)
+PANEL_SHADOW = (85, 85, 85)
+SLOT_DARK = (55, 55, 55)
+SLOT_LIGHT = (255, 255, 255)
+SLOT_BODY = (139, 139, 139)
+LABEL = (64, 64, 64)
 
-# --- layout constants, mirrored from IntakeLayout.java ----------------------
-TITLE_Y = 6
-PHASE_ROW_X, PHASE_ROW_Y, PHASE_ROW_W, PHASE_ROW_H = 8, 19, 62, 10
-PHASE_ROW_STEP = 11
-PHASE_ROW_VISIBLE = 7
-SCROLLBAR = (71, 19, 2, 77)
-MIXED = (8, 100, 60, 6)
-FE = (8, 110, 96, 8)
-SLOT_FILTER = (76, 20)
-SLOT_LOAD = (76, 44)
-BUTTONS = [(112, 18), (112, 40), (112, 62)]
-BUTTON = 20
-INV_LABEL = (8, 128)
-INV = (8, 140)
-INV_STEP = 18
-HOTBAR_Y = 198
-
-# --- vanilla palette (MeteorosGui) -----------------------------------------
-PANEL_BODY = (198, 198, 198, 255)
-PANEL_HIGHLIGHT = (255, 255, 255, 255)
-PANEL_SHADOW = (85, 85, 85, 255)
-SLOT_DARK = (55, 55, 55, 255)
-SLOT_LIGHT = (255, 255, 255, 255)
-SLOT_BODY = (139, 139, 139, 255)
-MIXED_COLOR = (139, 139, 139, 255)
-MIXED_EMPTY = (85, 85, 85, 255)
-FE_COLOR = (210, 75, 63, 255)
-TITLE_COLOR = (64, 64, 64, 255)
-
-# six core phases + impure aetheron (0xB9BDC0)
-PHASE_COLORS = [
-    (255, 255, 255, 255),
-    (255, 74, 63, 255),
-    (95, 232, 255, 255),
-    (255, 225, 74, 255),
-    (154, 92, 255, 255),
-    (58, 84, 224, 255),
-    (185, 189, 192, 255),
+# --- registry knowledge: the 7 phases (only used to draw the mock) ----------
+PHASES = [
+    ("Ae", (255, 255, 255)),
+    ("T", (255, 74, 63)),
+    ("C", (95, 232, 255)),
+    ("V+", (255, 225, 74)),
+    ("V-", (154, 92, 255)),
+    ("Aq", (58, 84, 224)),
+    ("Ae*", (185, 189, 192)),
 ]
+FAKE_AMOUNT = [0.62, 0.38, 0.30, 0.22, 0.16, 0.11, 0.05]  # fill ratios
+FE_RATIO = 0.64
+
+FONT_CANDIDATES = [
+    r"C:\Windows\Fonts\msyh.ttc",
+    r"C:\Windows\Fonts\msyhbd.ttc",
+    r"C:\Windows\Fonts\simhei.ttf",
+]
+ICON_NAMES = {
+    "toggle": "icon_power.png",
+    "auto_io": "icon_autoio.png",
+    "redstone": "icon_redstone_high.png",
+    "extract": "icon_extract.png",
+    "side_config": "icon_side.png",
+}
 
 
-def dark(argb: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
-    """Mirror of Phase.darkRgb(): each channel * 35%, floor 8."""
-    return tuple(max(8, c * 35 // 100) for c in argb[:3]) + (255,)
+def dark(rgb, factor=0.35):
+    return tuple(max(8, int(c * factor)) for c in rgb)
 
 
-def fill(base: Image.Image, x0: int, y0: int, x1: int, y1: int, color) -> None:
-    if x1 <= x0 or y1 <= y0:
-        return
-    layer = Image.new("RGBA", (x1 - x0, y1 - y0), color)
-    base.alpha_composite(layer, (x0, y0))
+class Mock:
+    def __init__(self, layout: dict, scale: int) -> None:
+        self.layout = layout
+        self.scale = scale
+        w, h = layout["size"]
+        self.img = Image.new("RGBA", (w * scale, h * scale), (0, 0, 0, 0))
+        self.draw = ImageDraw.Draw(self.img)
+        self._fonts: dict[int, ImageFont.FreeTypeFont] = {}
+        self._icons: dict[str, Image.Image] = {}
 
+    # -- helpers -----------------------------------------------------------
+    def font(self, px: int) -> ImageFont.FreeTypeFont:
+        key = max(5, px)
+        if key not in self._fonts:
+            size = key * self.scale
+            f = None
+            for path in FONT_CANDIDATES:
+                if os.path.exists(path):
+                    f = ImageFont.truetype(path, size)
+                    break
+            self._fonts[key] = f or ImageFont.load_default()
+        return self._fonts[key]
 
-def panel(base: Image.Image, x: int, y: int, w: int, h: int) -> None:
-    fill(base, x, y, x + w, y + h, (0, 0, 0, 255))
-    fill(base, x + 1, y + 1, x + w - 1, y + h - 1, PANEL_BODY)
-    fill(base, x + 1, y + 1, x + w - 1, y + 2, PANEL_HIGHLIGHT)
-    fill(base, x + 1, y + 1, x + 2, y + h - 1, PANEL_HIGHLIGHT)
-    fill(base, x + 1, y + h - 2, x + w - 1, y + h - 1, PANEL_SHADOW)
-    fill(base, x + w - 2, y + 1, x + w - 1, y + h - 1, PANEL_SHADOW)
+    def rect(self, x, y, w, h, color):
+        s = self.scale
+        self.draw.rectangle([x * s, y * s, (x + w) * s - 1, (y + h) * s - 1], fill=color)
 
+    def text(self, x, y, text, color=LABEL, px=8, center_in=None, vcenter=None):
+        """vcenter: 元素中心 y（布局坐标），文字整体垂直居中于该处。"""
+        f = self.font(px)
+        s = self.scale
+        bbox = self.draw.textbbox((0, 0), text, font=f)
+        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        if center_in is not None:
+            cx, cw = center_in
+            px_x = cx * s + (cw * s - tw) / 2 - bbox[0]
+        else:
+            px_x = x * s - bbox[0]
+        px_y = (vcenter * s - th / 2 - bbox[1]) if vcenter is not None else (y * s - bbox[1])
+        self.draw.text((px_x, px_y), text, font=f, fill=color)
 
-def slot(base: Image.Image, x: int, y: int) -> None:
-    """18 x 18 sunken slot drawn at (x - 1, y - 1) around a 16 x 16 cell."""
-    sx, sy = x - 1, y - 1
-    fill(base, sx, sy, sx + 18, sy + 18, SLOT_BODY)
-    fill(base, sx, sy, sx + 18, sy + 1, SLOT_DARK)
-    fill(base, sx, sy, sx + 1, sy + 18, SLOT_DARK)
-    fill(base, sx, sy + 17, sx + 18, sy + 18, SLOT_LIGHT)
-    fill(base, sx + 17, sy, sx + 18, sy + 18, SLOT_LIGHT)
+    # -- primitives (1:1 with MeteorosGui) ---------------------------------
+    def panel(self, x, y, w, h):
+        self.rect(x, y, w, h, BLACK)
+        self.rect(x + 1, y + 1, w - 2, h - 2, PANEL_BODY)
+        self.rect(x + 1, y + 1, w - 2, 1, PANEL_HIGHLIGHT)
+        self.rect(x + 1, y + 1, 1, h - 2, PANEL_HIGHLIGHT)
+        self.rect(x + 1, y + h - 2, w - 2, 1, PANEL_SHADOW)
+        self.rect(x + w - 2, y + 1, 1, h - 2, PANEL_SHADOW)
 
+    def slot(self, x, y, hover=False):
+        # game draws the 18x18 frame at (x-1, y-1) so the hit box stays 16x16
+        self.rect(x - 1, y - 1, 18, 18, SLOT_BODY)
+        self.rect(x - 1, y - 1, 18, 1, SLOT_DARK)
+        self.rect(x - 1, y - 1, 1, 18, SLOT_DARK)
+        self.rect(x - 1, y + 16, 18, 1, SLOT_LIGHT)
+        self.rect(x + 16, y - 1, 1, 18, SLOT_LIGHT)
 
-def phase_bar_h(base: Image.Image, x: int, y: int, w: int, h: int,
-                level: float, color, empty) -> None:
-    """Mirror of MeteorosGui.phaseBarH."""
-    fill(base, x, y, x + w, y + h, empty)
-    inner_w = w - 2
-    filled = round(max(0.0, min(1.0, level)) * inner_w)
-    if filled > 0:
-        fill(base, x + 1, y + 1, x + 1 + filled, y + h - 1, color)
-    fill(base, x, y, x + w, y + 1, SLOT_DARK)
-    fill(base, x, y, x + 1, y + h, SLOT_DARK)
-    fill(base, x, y + h - 1, x + w, y + h, SLOT_LIGHT)
-    fill(base, x + w - 1, y, x + w, y + h, SLOT_LIGHT)
+    def phase_row(self, x, y, w, h, rgb, ratio, selected=False):
+        self.rect(x, y, w, h, dark(rgb))
+        fill = round((w - 2) * max(0.0, min(1.0, ratio)))
+        if fill > 0:
+            self.rect(x + 1, y + 1, fill, h - 2, rgb)
+        self.rect(x, y, w, 1, SLOT_DARK)
+        self.rect(x, y, 1, h, SLOT_DARK)
+        self.rect(x, y + h - 1, w, 1, SLOT_LIGHT)
+        self.rect(x + w - 1, y, 1, h, SLOT_LIGHT)
+        if selected:
+            self.draw.rectangle(
+                [x * self.scale, y * self.scale,
+                 (x + w) * self.scale - 1, (y + h) * self.scale - 1],
+                outline=(255, 255, 255, 255), width=self.scale)
 
+    def bar_phase_h(self, x, y, w, h, ratio, fill_rgb, empty_rgb):
+        """与 MeteorosGui.phaseBarH 一致：先铺 empty → 上/左 #373737、下/右白 → round 填充。"""
+        self.rect(x, y, w, h, SLOT_DARK)
+        self.rect(x + 1, y + 1, w - 2, h - 2, empty_rgb)
+        self.rect(x, y, w, 1, SLOT_DARK)
+        self.rect(x, y, 1, h, SLOT_DARK)
+        self.rect(x, y + h - 1, w, 1, SLOT_LIGHT)
+        self.rect(x + w - 1, y, 1, h, SLOT_LIGHT)
+        inner = round((w - 2) * max(0.0, min(1.0, ratio)))
+        if inner > 0:
+            self.rect(x + 1, y + 1, inner, h - 2, fill_rgb)
 
-def phase_row(base: Image.Image, x: int, y: int, w: int, h: int,
-              level: float, color, selected: bool = False) -> None:
-    """Mirror of PhaseRowWidget: dark interior, hollow edge, left-to-right fill.
+    def bar_h(self, x, y, w, h, ratio, fill_rgb, track=SLOT_BODY, text=None):
+        self.rect(x, y, w, h, SLOT_DARK)
+        self.rect(x + 1, y + 1, w - 2, h - 2, track)
+        inner = int((w - 2) * max(0.0, min(1.0, ratio)))
+        if inner > 0:
+            self.rect(x + 1, y + 1, inner, h - 2, fill_rgb)
+        if text:
+            self.text(x, y, text, (255, 255, 255), 7, center_in=(x, w), vcenter=y + h / 2)
 
-    No text: the widget stopped drawing labels; amounts are tooltip-only.
-    """
-    fill(base, x, y, x + w, y + h, dark(color))
-    inner_w = w - 2
-    filled = round(max(0.0, min(1.0, level)) * inner_w)
-    if filled > 0:
-        fill(base, x + 1, y + 1, x + 1 + filled, y + h - 1, color)
-    edge = SLOT_LIGHT if selected else None
-    fill(base, x, y, x + w, y + 1, edge or SLOT_DARK)
-    fill(base, x, y, x + 1, y + h, edge or SLOT_DARK)
-    fill(base, x, y + h - 1, x + w, y + h, edge or SLOT_LIGHT)
-    fill(base, x + w - 1, y, x + w, y + h, edge or SLOT_LIGHT)
+    def icon_button(self, x, y, size, action):
+        self.panel(x, y, size, size)
+        name = ICON_NAMES.get(action)
+        if not name:
+            return
+        if name not in self._icons:
+            path = ICONS / name
+            if not path.exists():
+                self._icons[name] = None
+                return
+            icon = Image.open(path).convert("RGBA")
+            self._icons[name] = icon.resize(
+                (icon.width * self.scale, icon.height * self.scale), Image.NEAREST)
+        icon = self._icons[name]
+        if icon is None:
+            return
+        ix = x * self.scale + (size * self.scale - icon.width) // 2
+        iy = y * self.scale + (size * self.scale - icon.height) // 2
+        self.img.alpha_composite(icon, (ix, iy))
 
+    def inventory(self, el):
+        step = int(el.get("step", 18))
+        lx, ly = el["label"]
+        self.text(lx, ly, "玩家背包", LABEL, 8)
+        for row_y in el["rows"]:
+            for col in range(9):
+                self.slot(lx + col * step, row_y)
+        hotbar_y = int(el["hotbar"])
+        for col in range(9):
+            self.slot(lx + col * step, hotbar_y)
 
-def scrollbar(base: Image.Image, x: int, y: int, w: int, h: int,
-              visible: int, total: int, offset: int) -> None:
-    fill(base, x, y, x + w, y + h, SLOT_DARK)
-    if total <= visible or total <= 0:
-        fill(base, x, y, x + w, y + h, SLOT_BODY)
-        return
-    thumb = max(6, h * visible // total)
-    span = h - thumb
-    pos = y + (span * offset) // (total - visible)
-    fill(base, x, pos, x + w, pos + thumb, SLOT_BODY)
+    def spacer(self, x, y, w, h):
+        dashed = (64, 64, 64)
+        step = 3
+        for i in range(0, w, step * 2):
+            self.rect(x + i, y, min(step, w - i), 1, dashed)
+            self.rect(x + i, y + h - 1, min(step, w - i), 1, dashed)
+        for i in range(0, h, step * 2):
+            self.rect(x, y + i, 1, min(step, h - i), dashed)
+            self.rect(x + w - 1, y + i, 1, min(step, h - i), dashed)
 
+    # -- element dispatch --------------------------------------------------
+    def render(self) -> Image.Image:
+        w, h = self.layout["size"]
+        self.panel(0, 0, w, h)
+        for el in self.layout["elements"]:
+            self.element(el)
+        return self.img
 
-def frame_bar(base: Image.Image, x: int, y: int, w: int, h: int, level: float, color) -> None:
-    """Mirror of MeteorosGui.barH (frame + track + fill)."""
-    fill(base, x, y, x + w, y + h, SLOT_DARK)
-    fill(base, x + 1, y + 1, x + w - 1, y + h - 1, SLOT_BODY)
-    filled = round(max(0.0, min(1.0, level)) * (w - 2))
-    if filled > 0:
-        fill(base, x + 1, y + 1, x + 1 + filled, y + h - 1, color)
-
-
-def icon_button(base: Image.Image, x: int, y: int, icon: str) -> None:
-    panel(base, x, y, BUTTON, BUTTON)
-    path = os.path.join(ICONS, icon)
-    if os.path.exists(path):
-        img = Image.open(path).convert("RGBA")
-        base.alpha_composite(img, (x + 2, y + 2))
+    def element(self, el: dict) -> None:
+        t = el.get("type")
+        x, y = int(el.get("x", 0)), int(el.get("y", 0))
+        if t == "title":
+            w = self.layout["size"][0]
+            name = "粒子进气塔" if self.layout["id"] == "intake" else "热力发电机"
+            self.text(x, y, name, LABEL, 8, center_in=(0, w))
+        elif t == "text":
+            self.text(x, y, "工作中" if el.get("role") == "status" else "", LABEL, 8)
+        elif t == "phase_rows":
+            step, vis = int(el.get("step", 11)), int(el.get("visible", 1))
+            rw, rh = int(el["w"]), int(el["h"])
+            for i in range(vis):
+                ratio = FAKE_AMOUNT[i % len(FAKE_AMOUNT)]
+                rgb = PHASES[i % len(PHASES)][1]
+                self.phase_row(x, y + i * step, rw, rh, rgb, ratio, selected=(i == 0))
+            sb = el.get("scrollbar")
+            if sb and vis < len(PHASES):
+                sx, sy, sw, sh = (int(sb[k]) for k in "xywh")
+                self.rect(sx, sy, sw, sh, SLOT_DARK)
+                thumb = max(6, int(sh * vis / len(PHASES)))
+                self.rect(sx, sy, sw, thumb, SLOT_BODY)
+        elif t == "bar_phase":
+            self.bar_phase_h(x, y, int(el["w"]), int(el["h"]), 0.34,
+                             (139, 139, 139), (85, 85, 85))
+        elif t == "bar_energy":
+            self.bar_h(x, y, int(el["w"]), int(el["h"]), FE_RATIO, (255, 0, 0),
+                       text="640 kFE / 1 MFE")
+        elif t == "slot":
+            self.slot(x, y)
+        elif t == "icon_button":
+            self.icon_button(x, y, int(el.get("size", 20)), el.get("action", ""))
+        elif t == "inventory":
+            self.inventory(el)
+        elif t == "spacer":
+            if el.get("role") != "upgrade_band":  # 纯预留带，不在预览里画
+                self.spacer(x, y, int(el["w"]), int(el["h"]))
 
 
 def main() -> None:
-    base = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    panel(base, 0, 0, W, H)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("screen", nargs="?", default="intake")
+    parser.add_argument("--scale", type=int, default=4)
+    args = parser.parse_args()
 
-    # seven phase rows, all visible (no scrolling needed for 7 phases)
-    row_levels = [0.62, 0.41, 0.27, 0.14, 0.09, 0.05, 0.03]
-    for i, (color, level) in enumerate(zip(PHASE_COLORS, row_levels)):
-        phase_row(base, PHASE_ROW_X, PHASE_ROW_Y + i * PHASE_ROW_STEP,
-                  PHASE_ROW_W, PHASE_ROW_H, level, color, selected=(i == 1))
-    scrollbar(base, SCROLLBAR[0], SCROLLBAR[1], SCROLLBAR[2], SCROLLBAR[3],
-              PHASE_ROW_VISIBLE, 7, 0)
+    path = GUI_JSON / f"{args.screen}.json"
+    layout = json.loads(path.read_text(encoding="utf-8"))
+    mock = Mock(layout, args.scale)
+    img = mock.render()
 
-    # mixed buffer: grey fill on a darker empty part
-    mx, my, mw, mh = MIXED
-    phase_bar_h(base, mx, my, mw, mh, 0.18, MIXED_COLOR, MIXED_EMPTY)
-
-    # FE bar keeps the framed look (crimson is contrastive enough)
-    fx, fy, fw, fh = FE
-    frame_bar(base, fx, fy, fw, fh, 0.62, FE_COLOR)
-
-    # item slots + player inventory
-    for (sx, sy) in (SLOT_FILTER, SLOT_LOAD):
-        slot(base, sx, sy)
-    for row in range(3):
-        for col in range(9):
-            slot(base, INV[0] + col * INV_STEP, INV[1] + row * INV_STEP)
-    for col in range(9):
-        slot(base, INV[0] + col * INV_STEP, HOTBAR_Y)
-
-    # three icon buttons + top-right autoio / side-config toggles
-    for (bx, by), icon in zip(BUTTONS,
-                              ["icon_power.png", "icon_redstone_always.png", "icon_extract.png"]):
-        icon_button(base, bx, by, icon)
-    icon_button(base, 132, 4, "icon_autoio.png")
-    icon_button(base, 152, 4, "icon_side.png")
-
-    # --- 4x upscale + text -------------------------------------------------
-    big = base.resize((W * SCALE, H * SCALE), Image.NEAREST)
-    caption_h = 96
-    canvas = Image.new("RGBA", (W * SCALE, H * SCALE + caption_h), (24, 26, 30, 255))
-    canvas.alpha_composite(big, (0, 0))
-
-    font_dir = r"C:\Windows\Fonts"
-    ui_font = ImageFont.truetype(os.path.join(font_dir, "msyh.ttc"), 8 * SCALE)
-    label_font = ImageFont.truetype(os.path.join(font_dir, "msyh.ttc"), 13)
-
-    draw = ImageDraw.Draw(canvas)
-
-    title = "粒子进气塔"
-    tw = draw.textlength(title, font=ui_font)
-    draw.text(((W * SCALE - tw) / 2, TITLE_Y * SCALE + 2), title, font=ui_font, fill=TITLE_COLOR)
-
-    draw.text((INV_LABEL[0] * SCALE, INV_LABEL[1] * SCALE), "玩家背包", font=ui_font, fill=TITLE_COLOR)
-
-    draw.text((12, H * SCALE + 12),
-              "mock only · 176x224 @4x · 全部用 MeteorosGui 的 fill 原语重建，不贴图",
-              font=label_font, fill=(210, 214, 220, 255))
-    draw.text((12, H * SCALE + 40),
-              "相条：横排 62x10、步长 11、7 行一屏全显、行内无文字（数值只在 tooltip）；第 2 行白框=选中",
-              font=label_font, fill=(160, 166, 176, 255))
-    draw.text((12, H * SCALE + 64),
-              "混合条 (8,100) 灰 #8B8B8B / FE 条 (8,110) 96x8 红；背包 140/158/176、快捷栏 198",
-              font=label_font, fill=(160, 166, 176, 255))
-
-    canvas.convert("RGB").save(OUT)
-    print(f"wrote {OUT} {canvas.width}x{canvas.height}")
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    w, h = layout["size"]
+    out = OUT_DIR / f"preview_{args.screen}_{w}x{h}.png"
+    img.save(out)
+    print(f"wrote {out} {img.width}x{img.height}")
 
 
 if __name__ == "__main__":

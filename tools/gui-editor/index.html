@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meteoros Protocol · GUI 布局编辑器</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ─────────────────────────── 顶部工具条 ─────────────────────────── -->
+<header id="toolbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true"></span>
+    <span class="brand-name">METEOROS</span>
+    <span class="brand-sub">GUI&nbsp;LAYOUT&nbsp;EDITOR</span>
+  </div>
+
+  <div class="tool-group">
+    <label class="tool-label" for="screen-select">屏幕</label>
+    <select id="screen-select" title="切换布局文件（会丢弃未保存修改）">
+      <option value="intake">intake · 粒子进气塔</option>
+      <option value="machine_status">machine_status · 机器状态</option>
+    </select>
+  </div>
+
+  <div class="tool-group seg-group" id="zoom-group" role="group" aria-label="画布缩放">
+    <button type="button" class="seg" data-zoom="1" title="1×（原始像素）">1×</button>
+    <button type="button" class="seg is-active" data-zoom="2" title="2×">2×</button>
+    <button type="button" class="seg" data-zoom="3" title="3×">3×</button>
+  </div>
+
+  <div class="tool-group">
+    <label class="tool-label" for="snap-select">吸附</label>
+    <select id="snap-select" title="拖动时的坐标吸附">
+      <option value="2" selected>2 px</option>
+      <option value="18">18 px</option>
+      <option value="0">关闭</option>
+    </select>
+    <label class="check" title="显示吸附网格（2× 及以上或 18px 网格时可见）">
+      <input type="checkbox" id="grid-toggle"> 网格
+    </label>
+  </div>
+
+  <div class="tool-spacer"></div>
+
+  <div class="tool-group">
+    <button type="button" id="reload-btn" class="icon-btn" title="从服务端重新加载当前布局（丢弃本地修改）">⟳</button>
+    <button type="button" id="undo-btn" class="icon-btn" title="撤销 (Ctrl+Z)" disabled>↶</button>
+    <button type="button" id="redo-btn" class="icon-btn" title="重做 (Ctrl+Y)" disabled>↷</button>
+  </div>
+
+  <div class="tool-group">
+    <button type="button" id="save-btn" class="btn primary" title="保存到服务端 (Ctrl+S)">保存 <kbd>Ctrl+S</kbd></button>
+    <button type="button" id="build-btn" class="btn" title="POST /api/build 并轮询构建日志">Build</button>
+  </div>
+
+  <div class="status-strip">
+    <span id="dirty-pill" class="pill">—</span>
+    <span id="server-pill" class="pill offline">服务端离线</span>
+  </div>
+</header>
+
+<!-- ─────────────────────────── 三栏工作区 ─────────────────────────── -->
+<main id="workspace">
+
+  <!-- 左：元素树 -->
+  <aside id="tree-panel" class="panel">
+    <div class="panel-head">
+      <h2>元素树</h2>
+      <span id="tree-count" class="dim">0</span>
+    </div>
+    <div class="panel-body tree-body">
+      <ol id="tree-list" class="tree-list"></ol>
+      <p id="tree-empty" class="empty-hint" hidden>没有元素。用下方下拉框新增一个。</p>
+    </div>
+    <div class="tree-footer">
+      <div class="add-row">
+        <select id="add-type" title="新增元素类型">
+          <option value="title">title 标题</option>
+          <option value="text">text 状态文字</option>
+          <option value="phase_rows">phase_rows 相行区</option>
+          <option value="bar_phase">bar_phase 相/混合条</option>
+          <option value="bar_energy">bar_energy FE 条</option>
+          <option value="slot">slot 物品槽</option>
+          <option value="icon_button">icon_button 图标按钮</option>
+          <option value="inventory">inventory 玩家背包</option>
+          <option value="spacer">spacer 占位标记</option>
+        </select>
+        <button type="button" id="add-btn" class="btn small" title="在末尾新增（最上层）">＋ 新增</button>
+      </div>
+      <div class="tree-ops" id="tree-ops">
+        <button type="button" data-op="up" class="btn tiny" title="上移一层（更早绘制）">↑ 上移</button>
+        <button type="button" data-op="down" class="btn tiny" title="下移一层（更晚绘制）">↓ 下移</button>
+        <button type="button" data-op="duplicate" class="btn tiny" title="复制选中元素 (Ctrl+D)">⧉ 复制</button>
+        <button type="button" data-op="delete" class="btn tiny danger" title="删除选中元素 (Delete)">✕ 删除</button>
+      </div>
+      <p class="hint">列表顺序 = 绘制顺序，越靠后越在上层。</p>
+    </div>
+  </aside>
+
+  <!-- 中：画布 -->
+  <section id="canvas-panel" aria-label="布局画布">
+    <div class="canvas-head">
+      <span id="canvas-title" class="canvas-title">—</span>
+      <span id="cursor-readout" class="canvas-meta">x — · y —</span>
+      <label class="check" id="compare-label" title="如果服务端提供 /assets/preview/<id>.png 就并排显示">
+        <input type="checkbox" id="compare-toggle" disabled> 服务端对照图
+      </label>
+    </div>
+
+    <div class="canvas-scroll" id="canvas-scroll">
+      <div class="canvas-stage" id="canvas-stage">
+        <div class="canvas-frame">
+          <canvas id="canvas" width="352" height="448" tabindex="0"></canvas>
+        </div>
+        <div class="canvas-frame compare-frame" id="compare-frame" hidden>
+          <img id="compare-img" alt="服务端渲染对照图">
+        </div>
+      </div>
+
+      <div id="canvas-error" class="canvas-error" hidden>
+        <h3>无法加载布局</h3>
+        <p id="canvas-error-msg">—</p>
+        <p class="dim">确认服务端已启动：<code>python tools/gui-editor/server.py</code></p>
+        <div class="canvas-error-actions">
+          <button type="button" id="retry-btn" class="btn primary">重试</button>
+          <span id="canvas-error-url" class="dim"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="canvas-foot">
+      <span id="selection-readout" class="dim">未选中元素</span>
+      <span class="dim canvas-foot-hint">拖动移动 · 右下角手柄改尺寸 · Delete 删除 · 方向键微调</span>
+    </div>
+  </section>
+
+  <!-- 右：属性栏 -->
+  <aside id="props-panel" class="panel">
+    <div class="panel-head">
+      <h2>属性</h2>
+      <span id="props-type" class="dim">—</span>
+    </div>
+    <div class="panel-body" id="props-body"></div>
+  </aside>
+</main>
+
+<!-- ─────────────────────────── 底部：校验 + 日志 ─────────────────────────── -->
+<footer id="bottom">
+  <section class="panel bottom-left">
+    <div class="panel-head">
+      <h2>校验</h2>
+      <span id="validation-summary" class="dim">—</span>
+      <span class="panel-head-spacer"></span>
+      <span class="dim" id="validation-source">schema v1 · 6 条规则</span>
+    </div>
+    <div class="panel-body">
+      <ul id="validation-list" class="validation-list"></ul>
+    </div>
+  </section>
+
+  <section class="panel bottom-right">
+    <div class="panel-head">
+      <h2>日志 / Build</h2>
+      <span id="build-result" class="build-result dim"></span>
+      <span class="panel-head-spacer"></span>
+      <button type="button" id="clear-log" class="btn tiny">清空</button>
+    </div>
+    <div class="panel-body">
+      <pre id="log" class="log" aria-live="polite"></pre>
+    </div>
+  </section>
+</footer>
+
+<script src="primitives.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

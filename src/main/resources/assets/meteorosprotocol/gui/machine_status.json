@@ -1,0 +1,86 @@
+{
+  "schema": 1,
+  "id": "machine_status",
+  "size": [176, 224],
+  "elements": [
+    {
+      "type": "title",
+      "x": 8,
+      "y": 6,
+      "text": "dynamic",
+      "centered": true
+    },
+    {
+      "type": "bar_energy",
+      "x": 8,
+      "y": 26,
+      "w": 96,
+      "h": 8
+    },
+    {
+      "type": "bar_phase",
+      "x": 8,
+      "y": 37,
+      "w": 96,
+      "h": 4,
+      "channel": "mixed",
+      "hide_when": "hidesMixedBuffer"
+    },
+    {
+      "type": "phase_rows",
+      "x": 8,
+      "y": 44,
+      "w": 96,
+      "h": 10,
+      "step": 11,
+      "visible": 5,
+      "scrollbar": {
+        "x": 106,
+        "y": 44,
+        "w": 2,
+        "h": 55
+      }
+    },
+    {
+      "type": "text",
+      "x": 8,
+      "y": 104,
+      "role": "status"
+    },
+    {
+      "type": "icon_button",
+      "x": 112,
+      "y": 18,
+      "size": 20,
+      "action": "toggle"
+    },
+    {
+      "type": "icon_button",
+      "x": 112,
+      "y": 40,
+      "size": 20,
+      "action": "redstone"
+    },
+    {
+      "type": "icon_button",
+      "x": 132,
+      "y": 4,
+      "size": 20,
+      "action": "auto_io"
+    },
+    {
+      "type": "icon_button",
+      "x": 152,
+      "y": 4,
+      "size": 20,
+      "action": "side_config"
+    },
+    {
+      "type": "inventory",
+      "label": [8, 128],
+      "rows": [140, 158, 176],
+      "hotbar": 198,
+      "step": 18
+    }
+  ]
+}

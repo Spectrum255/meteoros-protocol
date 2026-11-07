@@ -2,8 +2,8 @@ package com.spectrum255.meteorosprotocol.client;
 
 import com.spectrum255.meteorosprotocol.MeteorosProtocol;
 import com.spectrum255.meteorosprotocol.Config;
+import com.spectrum255.meteorosprotocol.client.gui.GuiLayout;
 import com.spectrum255.meteorosprotocol.client.gui.IconButton;
-import com.spectrum255.meteorosprotocol.client.gui.IntakeLayout;
 import com.spectrum255.meteorosprotocol.client.gui.MeteorosGui;
 import com.spectrum255.meteorosprotocol.client.gui.PhaseRowWidget;
 import com.spectrum255.meteorosprotocol.client.gui.SideConfigPanel;
@@ -25,10 +25,14 @@ import java.util.List;
 /**
  * Shared status screen for the machines that have no bespoke layout (thermal
  * generator, particle purifier, particle port, weather station, weather tank):
- * 176 x 180 vanilla-styled panel, one FE bar, a thin mixed-buffer bar, a
- * scrolling horizontal list of <em>relevant</em> phase rows and two icon buttons
- * (enable, cycle redstone mode). No item slots are involved; only the player
- * inventory is drawn.
+ * a 176 x 224 vanilla-styled panel, one FE bar, a thin mixed-buffer bar, a
+ * scrolling horizontal list of <em>relevant</em> phase rows and four icon
+ * buttons (enable, cycle redstone mode, auto I/O, side config). No item slots
+ * are involved; only the player inventory is drawn.
+ *
+ * <p>Every coordinate comes from {@link GuiLayout} ({@code gui/machine_status.json});
+ * the loader falls back to the built-in layout when the file is missing or
+ * invalid, so this screen never fails to open.</p>
  *
  * <p>The rows follow the machine family: the generator shows only its Thermion
  * input (a bare generator has no byproduct), the purifier shows the four phases
@@ -38,46 +42,11 @@ import java.util.List;
  * reading; it sends nothing to the server.</p>
  */
 public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMenu> {
-    private static final int WIDTH = 176;
-    private static final int HEIGHT = 224;
-    private static final int TITLE_Y = 6;
     private static final int TITLE_COLOR = 0xFF404040;
-
     private static final int FE_COLOR = 0xFFFF0000;
-    private static final int FE_X = 8;
-    private static final int FE_Y = 26;
-    private static final int FE_WIDTH = 96;
-    private static final int FE_HEIGHT = 8;
-
     /** Mixed buffer: one thin bar, hidden for the purifier (it never stores mixed for long). */
-    private static final int MIXED_X = 8;
-    private static final int MIXED_Y = 37;
-    private static final int MIXED_WIDTH = 96;
-    private static final int MIXED_HEIGHT = 4;
     private static final int MIXED_COLOR = 0xFF8B8B8B;
-
-    /** Scrolling phase rows: five visible at once, 55 px window, wheel scrolls. */
-    private static final int ROW_X = 8;
-    private static final int ROW_Y = 44;
-    /** Purifier hides the mixed bar, so its row window starts 3 px higher. */
-    private static final int ROW_Y_HIDDEN = 41;
-    private static final int ROW_WIDTH = 96;
-    private static final int ROW_HEIGHT = 10;
-    private static final int ROW_STEP = 11;
-    private static final int ROW_VISIBLE = 5;
-    private static final int ROW_WINDOW_HEIGHT = ROW_VISIBLE * ROW_STEP - 1;
-    private static final int SCROLLBAR_X = 106;
-    private static final int SCROLLBAR_WIDTH = 2;
-    private static final int SCROLLBAR_HEIGHT = 55;
-
-    private static final int STATUS_X = 8;
-    private static final int STATUS_Y = 104;
     private static final int STATUS_COLOR = 0xFF404040;
-
-    private static final int BUTTON_X = 112;
-    private static final int BUTTON_SIZE = 20;
-    private static final int BUTTON_TOGGLE_Y = 18;
-    private static final int BUTTON_REDSTONE_Y = 40;
 
     private static final String ICON_ROOT = "textures/gui/";
     private static final ResourceLocation ICON_POWER_ON = icon("icon_power");
@@ -88,10 +57,6 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
     private static final ResourceLocation ICON_SIDE = icon("icon_side");
     private static final ResourceLocation ICON_AUTOIO_ON = icon("icon_autoio");
     private static final ResourceLocation ICON_AUTOIO_OFF = icon("icon_autoio_off");
-    private static final int SIDE_BUTTON_X = 152;
-    private static final int SIDE_BUTTON_Y = 4;
-    private static final int AUTOIO_BUTTON_X = 132;
-    private static final int AUTOIO_BUTTON_Y = 4;
 
     private static final List<Component> POWER_TOOLTIP = List.of(
             Component.translatable("gui.meteorosprotocol.intake.power.enabled"));
@@ -107,6 +72,8 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
     private static final Component PIN_HINT = Component.translatableWithFallback(
             "gui.meteorosprotocol.machine.pin_hint", "Click to pin this row");
 
+    /** Geometry of this screen, loaded from {@code gui/machine_status.json} with a built-in fallback. */
+    private final GuiLayout layout;
     private IconButton toggleButton;
     private IconButton redstoneButton;
     private IconButton sideButton;
@@ -121,8 +88,9 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
 
     public MachineStatusScreen(MachineStatusMenu menu, Inventory inventory, Component title) {
         super(menu, inventory, title);
-        this.imageWidth = WIDTH;
-        this.imageHeight = HEIGHT;
+        this.layout = GuiLayout.load(GuiLayout.MACHINE_STATUS);
+        this.imageWidth = this.layout.width();
+        this.imageHeight = this.layout.height();
     }
 
     private static ResourceLocation icon(String name) {
@@ -132,29 +100,39 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
     @Override
     protected void init() {
         super.init();
-        int buttonX = this.leftPos + BUTTON_X;
-        this.toggleButton = this.addRenderableWidget(new IconButton(buttonX, this.topPos + BUTTON_TOGGLE_Y,
-                BUTTON_SIZE, BUTTON_SIZE, this::powerIcon, this::powerTooltip, button -> sendButton(0)));
-        this.redstoneButton = this.addRenderableWidget(new IconButton(buttonX, this.topPos + BUTTON_REDSTONE_Y,
-                BUTTON_SIZE, BUTTON_SIZE, this::redstoneIcon, this::redstoneTooltip, button -> sendButton(1)));
-        this.sideButton = this.addRenderableWidget(new IconButton(this.leftPos + SIDE_BUTTON_X,
-                this.topPos + SIDE_BUTTON_Y, BUTTON_SIZE, BUTTON_SIZE, ICON_SIDE,
-                this::sideTooltip, button -> this.sidePanel.toggle()));
-        this.autoIoButton = this.addRenderableWidget(new IconButton(this.leftPos + AUTOIO_BUTTON_X,
-                this.topPos + AUTOIO_BUTTON_Y, BUTTON_SIZE, BUTTON_SIZE, this::autoIoIcon,
-                this::autoIoTooltip, button -> sendButton(this.menu.autoIoButtonId())));
+        GuiLayout.Rect toggleRect = this.layout.iconButton("toggle");
+        GuiLayout.Rect redstoneRect = this.layout.iconButton("redstone");
+        GuiLayout.Rect sideRect = this.layout.iconButton("side_config");
+        GuiLayout.Rect autoIoRect = this.layout.iconButton("auto_io");
+        this.toggleButton = this.addRenderableWidget(new IconButton(
+                this.leftPos + toggleRect.x(), this.topPos + toggleRect.y(),
+                toggleRect.w(), toggleRect.h(), this::powerIcon, this::powerTooltip,
+                button -> sendButton(0)));
+        this.redstoneButton = this.addRenderableWidget(new IconButton(
+                this.leftPos + redstoneRect.x(), this.topPos + redstoneRect.y(),
+                redstoneRect.w(), redstoneRect.h(), this::redstoneIcon, this::redstoneTooltip,
+                button -> sendButton(1)));
+        this.sideButton = this.addRenderableWidget(new IconButton(
+                this.leftPos + sideRect.x(), this.topPos + sideRect.y(),
+                sideRect.w(), sideRect.h(), ICON_SIDE, this::sideTooltip,
+                button -> this.sidePanel.toggle()));
+        this.autoIoButton = this.addRenderableWidget(new IconButton(
+                this.leftPos + autoIoRect.x(), this.topPos + autoIoRect.y(),
+                autoIoRect.w(), autoIoRect.h(), this::autoIoIcon, this::autoIoTooltip,
+                button -> sendButton(this.menu.autoIoButtonId())));
         // Only the intake tower has item slots; this screen never shows them.
         this.sidePanel.setItemAvailable(false);
 
         this.phaseRows.clear();
         this.phaseScroll = 0;
+        GuiLayout.PhaseRows rows = this.layout.phaseRows();
         for (Phase phase : Phase.all()) {
             final int index = phase.index();
             PhaseRowWidget row = this.addRenderableWidget(new PhaseRowWidget(
-                    this.leftPos + ROW_X,
-                    this.topPos + ROW_Y,
-                    ROW_WIDTH,
-                    ROW_HEIGHT,
+                    this.leftPos + rows.area().x(),
+                    this.topPos + rowY(),
+                    rows.area().w(),
+                    rows.area().h(),
                     index,
                     () -> tankFill(index),
                     phase::argb,
@@ -172,8 +150,20 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
         updateRows();
     }
 
+    /**
+     * Top edge of the row window. When the mixed bar is hidden the layout has no
+     * dedicated {@code hide_when} gap field, so the reserved gap is derived from
+     * the JSON itself: {@code phase_rows.y - (bar_phase.y + bar_phase.h)} — 3 px
+     * for the shipped layout, which is exactly the old hand-tuned shift.
+     */
     private int rowY() {
-        return this.menu.hidesMixedBuffer() ? ROW_Y_HIDDEN : ROW_Y;
+        GuiLayout.PhaseRows rows = this.layout.phaseRows();
+        GuiLayout.BarSpec mixed = this.layout.barPhase("mixed");
+        if (!mixed.hiddenBy("hidesMixedBuffer") || !this.menu.hidesMixedBuffer()) {
+            return rows.area().y();
+        }
+        int gap = rows.area().y() - (mixed.rect().y() + mixed.rect().h());
+        return rows.area().y() - Math.max(0, gap);
     }
 
     private float tankFill(int index) {
@@ -221,7 +211,8 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
     private void updateRows() {
         List<Phase> phases = displayedPhases();
         int total = phases.size();
-        int maxScroll = Math.max(0, total - ROW_VISIBLE);
+        GuiLayout.PhaseRows rows = this.layout.phaseRows();
+        int maxScroll = Math.max(0, total - rows.visible());
         this.phaseScroll = Mth.clamp(this.phaseScroll, 0, maxScroll);
         for (PhaseRowWidget row : this.phaseRows) {
             row.visible = false;
@@ -229,80 +220,105 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
         int top = this.topPos + rowY();
         for (int position = 0; position < total; position++) {
             int slot = position - this.phaseScroll;
-            if (slot < 0 || slot >= ROW_VISIBLE) {
+            if (slot < 0 || slot >= rows.visible()) {
                 continue;
             }
             Phase phase = phases.get(position);
             PhaseRowWidget row = this.phaseRows.get(phase.index());
             row.visible = true;
-            row.setY(top + slot * ROW_STEP);
+            row.setY(top + slot * rows.step());
         }
     }
 
     /** 2 px wheel-only scrollbar; drawn in the background so it never blocks the rows. */
     private void drawScrollbar(GuiGraphics graphics, int x, int y) {
+        GuiLayout.PhaseRows rows = this.layout.phaseRows();
         int total = displayedPhases().size();
-        if (total <= ROW_VISIBLE) {
+        if (total <= rows.visible()) {
             return;
         }
-        int barX = x + SCROLLBAR_X;
+        GuiLayout.Rect scrollbar = rows.scrollbar();
+        int barX = x + scrollbar.x();
         int barY = y + rowY();
-        graphics.fill(barX, barY, barX + SCROLLBAR_WIDTH, barY + SCROLLBAR_HEIGHT, MeteorosGui.SLOT_DARK);
-        int thumbHeight = Math.max(6, SCROLLBAR_HEIGHT * ROW_VISIBLE / total);
-        int maxScroll = total - ROW_VISIBLE;
-        int thumbY = barY + (int) Math.round((double) (SCROLLBAR_HEIGHT - thumbHeight) * this.phaseScroll / maxScroll);
-        graphics.fill(barX, thumbY, barX + SCROLLBAR_WIDTH, thumbY + thumbHeight, MeteorosGui.SLOT_BODY);
+        int barHeight = scrollbar.h();
+        graphics.fill(barX, barY, barX + scrollbar.w(), barY + barHeight, MeteorosGui.SLOT_DARK);
+        int thumbHeight = Math.max(6, barHeight * rows.visible() / total);
+        int maxScroll = total - rows.visible();
+        int thumbY = barY + (int) Math.round((double) (barHeight - thumbHeight) * this.phaseScroll / maxScroll);
+        graphics.fill(barX, thumbY, barX + scrollbar.w(), thumbY + thumbHeight, MeteorosGui.SLOT_BODY);
     }
 
     @Override
     protected void renderBg(GuiGraphics graphics, float partialTick, int mouseX, int mouseY) {
         int x = this.leftPos;
         int y = this.topPos;
-        MeteorosGui.panel(graphics, x, y, WIDTH, HEIGHT);
+        MeteorosGui.panel(graphics, x, y, this.imageWidth, this.imageHeight);
 
-        MeteorosGui.barHWithText(graphics, this.font, x + FE_X, y + FE_Y, FE_WIDTH, FE_HEIGHT,
+        GuiLayout.Rect energyRect = this.layout.barEnergy();
+        MeteorosGui.barHWithText(graphics, this.font, x + energyRect.x(), y + energyRect.y(),
+                energyRect.w(), energyRect.h(),
                 (float) this.menu.energy() / MachineStatusMenu.ENERGY_CAPACITY, FE_COLOR, 0xFF555555,
                 Component.literal(ParticleFormat.formatFE(this.menu.energy()) + " / "
                         + ParticleFormat.formatFE(MachineStatusMenu.ENERGY_CAPACITY)));
 
-        if (!this.menu.hidesMixedBuffer()) {
-            MeteorosGui.phaseBarH(graphics, x + MIXED_X, y + MIXED_Y, MIXED_WIDTH, MIXED_HEIGHT,
+        GuiLayout.BarSpec mixed = this.layout.barPhase("mixed");
+        if (!mixed.hiddenBy("hidesMixedBuffer") || !this.menu.hidesMixedBuffer()) {
+            GuiLayout.Rect mixedRect = mixed.rect();
+            MeteorosGui.phaseBarH(graphics, x + mixedRect.x(), y + mixedRect.y(),
+                    mixedRect.w(), mixedRect.h(),
                     (float) ((double) this.menu.mixedTotal() / (double) MachineBlockEntity.MIXED_CAPACITY),
                     MIXED_COLOR, 0xFF555555);
         }
         drawScrollbar(graphics, x, y);
 
-        for (int row = 0; row < 3; row++) {
+        GuiLayout.InventorySpec inventory = this.layout.inventory();
+        int[] inventoryRowY = inventory.rows();
+        for (int row = 0; row < inventoryRowY.length; row++) {
             for (int col = 0; col < 9; col++) {
-                int slotX = x + IntakeLayout.INVENTORY_X + col * IntakeLayout.INVENTORY_STEP;
-                int slotY = y + IntakeLayout.INVENTORY_Y + row * IntakeLayout.INVENTORY_STEP;
+                int slotX = x + inventory.gridX() + col * inventory.step();
+                int slotY = y + inventoryRowY[row];
                 MeteorosGui.slot(graphics, slotX, slotY, inside(mouseX, mouseY, slotX, slotY, 16, 16));
             }
         }
         for (int col = 0; col < 9; col++) {
-            int slotX = x + IntakeLayout.INVENTORY_X + col * IntakeLayout.INVENTORY_STEP;
-            int slotY = y + IntakeLayout.HOTBAR_Y;
+            int slotX = x + inventory.gridX() + col * inventory.step();
+            int slotY = y + inventory.hotbar();
             MeteorosGui.slot(graphics, slotX, slotY, inside(mouseX, mouseY, slotX, slotY, 16, 16));
         }
     }
 
     @Override
     protected void renderLabels(GuiGraphics graphics, int mouseX, int mouseY) {
-        int titleWidth = this.font.width(this.title);
-        graphics.drawString(this.font, this.title, (WIDTH - titleWidth) / 2, TITLE_Y, TITLE_COLOR, false);
+        drawTitle(graphics);
 
+        GuiLayout.PhaseRows rows = this.layout.phaseRows();
         if (displayedPhases().isEmpty()) {
             graphics.drawString(this.font,
                     Component.translatable("gui.meteorosprotocol.machine.no_particles"),
-                    8, ROW_Y, MeteorosGui.TEXT_DIM, false);
+                    rows.area().x(), rows.area().y(), MeteorosGui.TEXT_DIM, false);
         }
 
+        GuiLayout.TextSpec status = this.layout.text("status");
         Component state = Component.translatable(this.menu.active()
                 ? "gui.meteorosprotocol.machine.working"
                 : "gui.meteorosprotocol.machine.idle");
-        graphics.drawString(this.font, state, STATUS_X, STATUS_Y, STATUS_COLOR, false);
+        graphics.drawString(this.font, state, status.x(), status.y(), STATUS_COLOR, false);
 
-        MeteorosGui.label(graphics, this.font, this.playerInventoryTitle, 8, IntakeLayout.INVENTORY_LABEL_Y);
+        GuiLayout.InventorySpec inventory = this.layout.inventory();
+        MeteorosGui.label(graphics, this.font, this.playerInventoryTitle,
+                inventory.labelX(), inventory.labelY());
+    }
+
+    /** Draws the panel title at the layout position, centred when the layout asks for it. */
+    private void drawTitle(GuiGraphics graphics) {
+        GuiLayout.Title title = this.layout.title();
+        Component text = GuiLayout.DYNAMIC_TEXT.equals(title.text())
+                ? this.title
+                : Component.translatable(title.text());
+        int titleX = title.centered()
+                ? (this.imageWidth - this.font.width(text)) / 2
+                : title.x();
+        graphics.drawString(this.font, text, titleX, title.y(), TITLE_COLOR, false);
     }
 
     @Override
@@ -372,10 +388,11 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
         if (this.sidePanel.visible()) {
             return true;
         }
-        if (inside(mouseX, mouseY, this.leftPos + ROW_X, this.topPos + rowY(),
-                ROW_WIDTH + SCROLLBAR_WIDTH + 2, ROW_WINDOW_HEIGHT)) {
+        GuiLayout.PhaseRows rows = this.layout.phaseRows();
+        if (inside(mouseX, mouseY, this.leftPos + rows.area().x(), this.topPos + rowY(),
+                rows.area().w() + rows.scrollbar().w() + 2, rows.windowHeight())) {
             int total = displayedPhases().size();
-            int maxScroll = Math.max(0, total - ROW_VISIBLE);
+            int maxScroll = Math.max(0, total - rows.visible());
             if (maxScroll > 0) {
                 int direction = scrollY > 0.0D ? -1 : 1;
                 int next = Mth.clamp(this.phaseScroll + direction, 0, maxScroll);
@@ -465,15 +482,20 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
         }
         int x = this.leftPos;
         int y = this.topPos;
-        if (!this.menu.hidesMixedBuffer()
-                && inside(mouseX, mouseY, x + MIXED_X, y + MIXED_Y, MIXED_WIDTH, MIXED_HEIGHT)) {
+        GuiLayout.BarSpec mixed = this.layout.barPhase("mixed");
+        GuiLayout.Rect mixedRect = mixed.rect();
+        if ((!mixed.hiddenBy("hidesMixedBuffer") || !this.menu.hidesMixedBuffer())
+                && inside(mouseX, mouseY, x + mixedRect.x(), y + mixedRect.y(),
+                        mixedRect.w(), mixedRect.h())) {
             String line = Component.translatable("gui.meteorosprotocol.intake.mixed").getString()
                     + ": " + ParticleFormat.formatPlain(this.menu.mixedTotal(), "mPU")
                     + " / " + ParticleFormat.formatPlain(MachineBlockEntity.MIXED_CAPACITY, "mPU");
             MeteorosGui.tooltip(graphics, this.font, Component.literal(line), mouseX, mouseY);
             return;
         }
-        if (inside(mouseX, mouseY, x + FE_X, y + FE_Y, FE_WIDTH, FE_HEIGHT)) {
+        GuiLayout.Rect energyRect = this.layout.barEnergy();
+        if (inside(mouseX, mouseY, x + energyRect.x(), y + energyRect.y(),
+                energyRect.w(), energyRect.h())) {
             String line = "FE " + ParticleFormat.formatPlain(this.menu.energy(), "FE")
                     + " / " + ParticleFormat.formatPlain(MachineStatusMenu.ENERGY_CAPACITY, "FE");
             MeteorosGui.tooltip(graphics, this.font, Component.literal(line), mouseX, mouseY);
