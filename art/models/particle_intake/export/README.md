@@ -1,6 +1,6 @@
 # particle_intake（进气塔 v4.1 导出稿）
 
-- 源模型：`art/intake-tower-v4.bbmodel`（Blockbench 5.2.2，`java_block`，工程 resolution 16）
+- 源模型：`art/models/particle_intake/particle_intake_v4.bbmodel`（Blockbench 5.2.2，`java_block`，工程 resolution 16）
 - 导出日期：2026-11-05
 - 导出方式：Blockbench 保存的 `.bbmodel` → 本地转换脚本（等价 Java Block/Item Model 导出），已逐项自检
 - 用途：**游戏内方块模型**。正面六格是各相位的暗屏，六相容量/组成由 BER 按 BlockEntity NBT 实时绘制
@@ -70,4 +70,4 @@
 - `format_version` 取 `1.21.11`（与工程现有 `models/block/particle_intake.json` 一致；方块模型加载会忽略该字段）。
 - 纹理键用名字而不是 `"0".."13"`，方便 BER / 贴图包替换；要统一成数字键时改 `textures` 键与 faces 的 `#name` 即可。
 - 模型没有 `parent` 与 item 显示变换，按工程现有方块模型的写法；物品栏模型另行处理。
-- 渲染：`art/v4-front.png`、`art/v4-iso.png`、`art/v4-export-check.png`。
+- 渲染：`art/screenshots/particle_intake/v4_front.png`、`art/screenshots/particle_intake/v4_iso.png`、`art/screenshots/particle_intake/v4_export_check.png`。

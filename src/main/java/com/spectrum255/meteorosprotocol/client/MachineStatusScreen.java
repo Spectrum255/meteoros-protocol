@@ -1,6 +1,7 @@
 package com.spectrum255.meteorosprotocol.client;
 
 import com.spectrum255.meteorosprotocol.MeteorosProtocol;
+import com.spectrum255.meteorosprotocol.Config;
 import com.spectrum255.meteorosprotocol.client.gui.IconButton;
 import com.spectrum255.meteorosprotocol.client.gui.MeteorosGui;
 import com.spectrum255.meteorosprotocol.client.gui.PhaseRowWidget;
@@ -191,9 +192,28 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
                 + ParticleFormat.formatMPU(this.menu.tankAmount(index)));
     }
 
+    /**
+     * Phases the status screen lists: a machine always shows the tanks it owns
+     * (even when empty), while a container — the particle port, kind generic —
+     * only shows phases that actually hold particles, plus the pinned row.
+     */
+    private List<Phase> displayedPhases() {
+        List<Phase> phases = this.menu.relevantPhases();
+        if (this.menu.kind() != MachineStatusMenu.KIND_GENERIC) {
+            return phases;
+        }
+        List<Phase> shown = new ArrayList<>();
+        for (Phase phase : phases) {
+            if (this.menu.tankAmount(phase.index()) > 0L || phase.index() == this.pinnedIndex) {
+                shown.add(phase);
+            }
+        }
+        return shown;
+    }
+
     /** Positions the row widgets for the current scroll offset and hides rows outside the window. */
     private void updateRows() {
-        List<Phase> phases = this.menu.relevantPhases();
+        List<Phase> phases = displayedPhases();
         int total = phases.size();
         int maxScroll = Math.max(0, total - ROW_VISIBLE);
         this.phaseScroll = Mth.clamp(this.phaseScroll, 0, maxScroll);
@@ -215,7 +235,7 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
 
     /** 2 px wheel-only scrollbar; drawn in the background so it never blocks the rows. */
     private void drawScrollbar(GuiGraphics graphics, int x, int y) {
-        int total = this.menu.relevantPhases().size();
+        int total = displayedPhases().size();
         if (total <= ROW_VISIBLE) {
             return;
         }
@@ -265,7 +285,7 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
         int titleWidth = this.font.width(this.title);
         graphics.drawString(this.font, this.title, (WIDTH - titleWidth) / 2, TITLE_Y, TITLE_COLOR, false);
 
-        if (this.menu.relevantPhases().isEmpty()) {
+        if (displayedPhases().isEmpty()) {
             graphics.drawString(this.font,
                     Component.translatable("gui.meteorosprotocol.machine.no_particles"),
                     8, ROW_Y, MeteorosGui.TEXT_DIM, false);
@@ -345,7 +365,7 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
         }
         if (inside(mouseX, mouseY, this.leftPos + ROW_X, this.topPos + rowY(),
                 ROW_WIDTH + SCROLLBAR_WIDTH + 2, ROW_WINDOW_HEIGHT)) {
-            int total = this.menu.relevantPhases().size();
+            int total = displayedPhases().size();
             int maxScroll = Math.max(0, total - ROW_VISIBLE);
             if (maxScroll > 0) {
                 int direction = scrollY > 0.0D ? -1 : 1;
@@ -470,15 +490,15 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
                 + " / " + ParticleFormat.formatPlain(capacity, "mPU"));
         double percent = capacity <= 0L ? 0.0D : Math.min(100.0D, stored * 100.0D / capacity);
         Component percentLine = Component.literal(String.format(java.util.Locale.ROOT, "%.1f%%", percent));
-        if (this.menu.hidesMixedBuffer()) {
-            MeteorosGui.tooltip(graphics, this.font, List.of(header, percentLine, PIN_HINT),
-                    mouseX, mouseY, 0xFF9A9A9A);
-            return;
+        List<Component> lines = new ArrayList<>();
+        lines.add(header);
+        lines.add(percentLine);
+        if (!this.menu.hidesMixedBuffer() && Config.showMixedInPhaseTooltip()) {
+            lines.add(Component.literal("mixed: " + ParticleFormat.formatPlain(
+                    this.menu.mixedAmount(index), "mPU")));
         }
-        Component mixed = Component.literal("mixed: " + ParticleFormat.formatPlain(
-                this.menu.mixedAmount(index), "mPU"));
-        MeteorosGui.tooltip(graphics, this.font, List.of(header, percentLine, mixed, PIN_HINT),
-                mouseX, mouseY, 0xFF9A9A9A);
+        lines.add(PIN_HINT);
+        MeteorosGui.tooltip(graphics, this.font, lines, mouseX, mouseY, 0xFF9A9A9A);
     }
 
     private static boolean inside(double mouseX, double mouseY, int x, int y, int width, int height) {

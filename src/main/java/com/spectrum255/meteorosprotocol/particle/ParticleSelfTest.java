@@ -635,10 +635,51 @@ public final class ParticleSelfTest {
                 "the generator must reject external Cryon tank inserts");
         require(generator.insert(Phase.THERMION, 1_000L, false) == 1_000L,
                 "the generator must still accept external Thermion");
-        require(generator.addPhaseInternal(Phase.CRYON, 500L) == 500L,
-                "internal Cryon writes must bypass the whitelist");
-        require(generator.phaseStorage().getAmount(Phase.CRYON) == 500L,
-                "internal Cryon must land in the phase tank");
+        // Capacity is now allocated per machine type: the generator owns a
+        // Thermion tank only, so even internal writes to anything else are
+        // refused (no hidden storage).
+        require(generator.phaseStorage().getCapacity(Phase.CRYON) == 0L,
+                "the generator must allocate no Cryon tank");
+        require(generator.phaseStorage().getCapacity(Phase.THERMION)
+                        == Phase.THERMION.tankCapacity(),
+                "the generator must allocate its full Thermion tank");
+        require(generator.addPhaseInternal(Phase.CRYON, 500L) == 0L,
+                "internal writes must not land in a zero-capacity tank");
+        require(generator.phaseStorage().getAmount(Phase.CRYON) == 0L,
+                "a refused internal write must leave the tank empty");
+        require(separator.addPhaseInternal(Phase.CRYON, 500L) == 500L,
+                "internal writes must bypass the whitelist on a machine with that tank");
+        require(separator.phaseStorage().getAmount(Phase.CRYON) == 500L,
+                "internal Cryon must land in a purifier tank");
+
+        // Per-machine tank allocation: the generator keeps one phase, the
+        // purifier four, containers all seven, weather blocks none.
+        require(generator.storagePhases().equals(List.of(Phase.THERMION)),
+                "the generator must only allocate a Thermion tank");
+        require(separator.storagePhases().equals(List.of(
+                        Phase.IMPURE_AETHERON, Phase.AETHERON, Phase.THERMION, Phase.CRYON)),
+                "the purifier must allocate impure Aetheron and its three outputs");
+        require(intake.storagePhases().equals(Phase.all()),
+                "the intake tower must keep a tank for every phase");
+        require(port.storagePhases().equals(Phase.all()),
+                "the port must keep a tank for every phase");
+        require(weather.storagePhases().isEmpty(),
+                "weather blocks must allocate no phase tanks");
+        long generatorCapacity = 0L;
+        long purifierCapacity = 0L;
+        for (Phase phase : Phase.all()) {
+            generatorCapacity += generator.phaseStorage().getCapacity(phase);
+            purifierCapacity += separator.phaseStorage().getCapacity(phase);
+        }
+        require(generatorCapacity == Phase.THERMION.tankCapacity(),
+                "the generator's total tank capacity must be one tank");
+        require(purifierCapacity == 4L * Phase.THERMION.tankCapacity(),
+                "the purifier's total tank capacity must be four tanks");
+        long weatherCapacity = 0L;
+        for (Phase phase : Phase.all()) {
+            weatherCapacity += weather.phaseStorage().getCapacity(phase);
+        }
+        require(weatherCapacity == 0L, "weather blocks must have zero tank capacity");
 
         // Impure aetheron: never accepted from outside; the generator byproduct
         // path is gated behind an upgrade that does not exist yet.
@@ -646,8 +687,8 @@ public final class ParticleSelfTest {
                 "the generator must reject external impure Aetheron mixed inserts");
         require(generator.phaseStorage().insert(Phase.IMPURE_AETHERON, 1_000L, false) == 0L,
                 "the generator must reject external impure Aetheron tank inserts");
-        require(generator.addPhaseInternal(Phase.IMPURE_AETHERON, 500L) == 500L,
-                "internal impure Aetheron writes must bypass the whitelist");
+        require(generator.addPhaseInternal(Phase.IMPURE_AETHERON, 500L) == 0L,
+                "the generator allocates no impure Aetheron tank");
         require(generator.relevantPhases().equals(List.of(Phase.THERMION)),
                 "a bare generator only shows Thermion: it has no byproduct");
         require(!generator.hasGeneratorUpgrade(), "the generator upgrade slot is not implemented yet");

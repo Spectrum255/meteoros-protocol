@@ -48,5 +48,5 @@
 
 ## 与旧版本的关系
 
-- `art/models/industrial/machine_frame.bbmodel`（v1，16 cube，带正面框/面板/4 灯/侧筋）**原样保留归档**，未修改、未覆盖。
+- `art/models/machine_frame/machine_frame_v1.bbmodel`（v1，16 cube，带正面框/面板/4 灯/侧筋）**原样保留归档**，未修改、未覆盖。
 - 本文件所记录的 1-cube 预览是 v1 之后的新口径（六面一致建筑方块）的验收件。

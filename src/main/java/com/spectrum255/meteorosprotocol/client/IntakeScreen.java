@@ -1,6 +1,7 @@
 package com.spectrum255.meteorosprotocol.client;
 
 import com.spectrum255.meteorosprotocol.MeteorosProtocol;
+import com.spectrum255.meteorosprotocol.Config;
 import com.spectrum255.meteorosprotocol.client.gui.IconButton;
 import com.spectrum255.meteorosprotocol.client.gui.IntakeLayout;
 import com.spectrum255.meteorosprotocol.client.gui.MeteorosGui;
@@ -136,6 +137,7 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
     protected void containerTick() {
         super.containerTick();
         updateWidgets();
+        updateRowLayout();
     }
 
     /** Keeps the extract button enabled state in sync; tooltips are live suppliers. */
@@ -161,22 +163,42 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
                 + ParticleFormat.formatMPU(this.menu.phaseAmount(index)));
     }
 
+    /** Phases currently listed: non-empty tanks plus the selected phase. */
+    private List<Phase> displayedPhases() {
+        int selected = this.menu.canisterPhaseIndex();
+        List<Phase> shown = new ArrayList<>();
+        for (Phase phase : Phase.all()) {
+            if (this.menu.phaseAmount(phase.index()) > 0L || phase.index() == selected) {
+                shown.add(phase);
+            }
+        }
+        return shown;
+    }
+
     /** Positions the row widgets for the current scroll offset and hides rows outside the window. */
     private void updateRowLayout() {
-        int total = this.phaseRows.size();
+        List<Phase> phases = displayedPhases();
+        int total = phases.size();
         int maxScroll = Math.max(0, total - IntakeLayout.PHASE_ROW_VISIBLE);
         this.phaseScroll = Mth.clamp(this.phaseScroll, 0, maxScroll);
-        for (int i = 0; i < total; i++) {
-            PhaseRowWidget row = this.phaseRows.get(i);
-            int slot = i - this.phaseScroll;
-            row.visible = slot >= 0 && slot < IntakeLayout.PHASE_ROW_VISIBLE;
-            row.setY(this.topPos + IntakeLayout.PHASE_ROW_Y + slot * IntakeLayout.PHASE_ROW_STEP);
+        for (PhaseRowWidget row : this.phaseRows) {
+            row.visible = false;
+        }
+        int top = this.topPos + IntakeLayout.PHASE_ROW_Y;
+        for (int position = 0; position < total; position++) {
+            int slot = position - this.phaseScroll;
+            if (slot < 0 || slot >= IntakeLayout.PHASE_ROW_VISIBLE) {
+                continue;
+            }
+            PhaseRowWidget row = this.phaseRows.get(phases.get(position).index());
+            row.visible = true;
+            row.setY(top + slot * IntakeLayout.PHASE_ROW_STEP);
         }
     }
 
     /** 2 px wheel-only scrollbar; drawn in the background so it never blocks the rows. */
     private void drawPhaseScrollbar(GuiGraphics graphics, int x, int y) {
-        int total = this.phaseRows.size();
+        int total = displayedPhases().size();
         if (total <= IntakeLayout.PHASE_ROW_VISIBLE) {
             return;
         }
@@ -203,6 +225,11 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
                 MIXED_COLOR, 0xFF555555);
 
         drawPhaseScrollbar(graphics, x, y);
+        if (displayedPhases().isEmpty()) {
+            graphics.drawString(this.font,
+                    Component.translatable("gui.meteorosprotocol.intake.empty"),
+                    x + IntakeLayout.PHASE_ROW_X, y + IntakeLayout.PHASE_ROW_Y, 0xFF808080, false);
+        }
 
         MeteorosGui.barHWithText(graphics, this.font, x + IntakeLayout.FE_X, y + IntakeLayout.FE_Y,
                 IntakeLayout.FE_WIDTH, IntakeLayout.FE_HEIGHT,
@@ -350,7 +377,7 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
                 this.topPos + IntakeLayout.PHASE_ROW_Y,
                 IntakeLayout.PHASE_ROW_WIDTH + IntakeLayout.PHASE_SCROLLBAR_WIDTH + 2,
                 IntakeLayout.PHASE_ROW_WINDOW_HEIGHT)) {
-            int total = this.phaseRows.size();
+            int total = displayedPhases().size();
             int maxScroll = Math.max(0, total - IntakeLayout.PHASE_ROW_VISIBLE);
             if (maxScroll > 0) {
                 int direction = scrollY > 0.0D ? -1 : 1;
@@ -479,8 +506,13 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
                 Component.translatable("gui.meteorosprotocol.intake.mixed").getString()
                         + ": " + ParticleFormat.formatPlain(this.menu.mixedAmount(index), "mPU"));
         Component hint = Component.translatable("gui.meteorosprotocol.intake.select_hint");
-        MeteorosGui.tooltip(graphics, this.font, List.of(tankLine, mixedLine, hint), mouseX, mouseY,
-                0xFF9A9A9A);
+        List<Component> lines = new ArrayList<>();
+        lines.add(tankLine);
+        if (Config.showMixedInPhaseTooltip()) {
+            lines.add(mixedLine);
+        }
+        lines.add(hint);
+        MeteorosGui.tooltip(graphics, this.font, lines, mouseX, mouseY, 0xFF9A9A9A);
     }
 
     private ResourceLocation powerIcon() {

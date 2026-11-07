@@ -94,7 +94,7 @@
 - 团块构成：`#E8B23C` 主体 6 px + `#FFD978` 高光 1 px + `#B9832A` 琥珀下缘/左缘 5 px，切角非对称（不是正圆/正方）。
 - 用途是**方块状态切换**（idle / active）的两张贴图，不是帧动画；两版像素网格对齐、UV 相同。
 
-### C. 给工程线的导出（`art/models/industrial/export/thermal_generator/`）
+### C. 给工程线的导出（`art/models/thermal_generator/export/`）
 
 | 文件 | 字节 | 说明 |
 | --- | --- | --- |

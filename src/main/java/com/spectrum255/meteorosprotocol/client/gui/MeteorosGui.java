@@ -45,9 +45,9 @@ public final class MeteorosGui {
     /** Slot hover wash, same value the vanilla container uses. */
     public static final int SLOT_HOVER = 0x80FFFFFF;
     /** Tooltip body / border colours. */
-    private static final int TOOLTIP_BG = 0xF0100010;
-    private static final int TOOLTIP_BORDER_LIGHT = 0x505000FF;
-    private static final int TOOLTIP_BORDER_DARK = 0x5028007F;
+    private static final int TOOLTIP_BG = 0xFF101010;
+    private static final int TOOLTIP_BORDER_LIGHT = 0xFF5000FF;
+    private static final int TOOLTIP_BORDER_DARK = 0xFF28007F;
     public static final int BUTTON_TEXT = 0xFF303030;
     public static final int BUTTON_TEXT_DISABLED = 0xFF9A9A9A;
 

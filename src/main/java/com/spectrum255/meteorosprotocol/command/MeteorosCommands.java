@@ -139,6 +139,19 @@ public final class MeteorosCommands {
         }
         String inputLine = input.toString();
         source.sendSuccess(() -> Component.literal(inputLine), false);
+        StringBuilder tanks = new StringBuilder("  tanks: ");
+        if (machine.storagePhases().isEmpty()) {
+            tanks.append("none");
+        } else {
+            for (int index = 0; index < machine.storagePhases().size(); index++) {
+                if (index > 0) {
+                    tanks.append(", ");
+                }
+                tanks.append(machine.storagePhases().get(index).shortName().getString());
+            }
+        }
+        String tankLine = tanks.toString();
+        source.sendSuccess(() -> Component.literal(tankLine), false);
         return 1;
     }
 

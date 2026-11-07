@@ -1,9 +1,9 @@
 # machine_frame（机器框架）建模说明
 
 - 版本：v1（2026-11-05），Blockbench 5.2.2，`java_block` 格式，工程分辨率 16×16
-- 文件：`art/models/industrial/machine_frame.bbmodel`（36,556 B）
+- 文件：`art/models/machine_frame/machine_frame_v1.bbmodel`（36,556 B）
 - 规模：**16 cube / 7 纹理 / 4 组**，16×16×16 单方块，坐标 0..16
-- 纹理源文件：`art/models/industrial/textures/*.png`（7 张 16×16）
+- 纹理源文件：`art/models/machine_frame/textures/*.png`（7 张 16×16）
 - 渲染：`machine_frame_front.png` / `machine_frame_side.png` / `machine_frame_iso.png`（1066×855，透明底）
 
 ## 坐标与朝向约定

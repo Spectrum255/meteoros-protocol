@@ -222,6 +222,13 @@ public final class Config {
                 .defineInRange("upgradeFactor", 0.25, 0.0, 1.0);
         BUILDER.pop();
 
+        BUILDER.comment("Client GUI display options.")
+                .push("gui");
+        PF_GUI_SHOW_MIXED_IN_PHASE_TOOLTIP = BUILDER
+                .comment("Show the mixed-buffer amount in a phase row's tooltip (default false).")
+                .define("showMixedInPhaseTooltip", false);
+        BUILDER.pop();
+
         BUILDER.comment("Temperature (primary): biome temperature plus nearby heat sources/cold blocks"
                         + " drive Thermion and Cryon.")
                 .push("temperature");
@@ -336,6 +343,9 @@ public final class Config {
     public static final ModConfigSpec.DoubleValue PF_IMPURE_SAMPLER_RATIO;
     public static final ModConfigSpec.DoubleValue PF_IMPURE_UPGRADE_FACTOR;
 
+    // Client GUI options
+    public static final ModConfigSpec.BooleanValue PF_GUI_SHOW_MIXED_IN_PHASE_TOOLTIP;
+
     // Temperature
     public static final ModConfigSpec.BooleanValue PF_TEMP_ENABLED;
     public static final ModConfigSpec.DoubleValue PF_TEMP_HEAT_SLOPE;
@@ -347,6 +357,15 @@ public final class Config {
     public static final ModConfigSpec.IntValue PF_TEMP_RADIUS;
 
     static final ModConfigSpec SPEC = BUILDER.build();
+
+    /** Whether phase-row tooltips append the mixed-buffer amount (safe before config load). */
+    public static boolean showMixedInPhaseTooltip() {
+        try {
+            return PF_GUI_SHOW_MIXED_IN_PHASE_TOOLTIP.get();
+        } catch (RuntimeException exception) {
+            return false;
+        }
+    }
 
     private Config() {
     }

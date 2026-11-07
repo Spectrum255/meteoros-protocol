@@ -117,12 +117,12 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
 
         @Override
         public long getCapacity(Phase phase) {
-            return phase.tankCapacity();
+            return tankCapacityFor(phase);
         }
 
         @Override
         public long insert(Phase phase, long amount, boolean simulate) {
-            if (!acceptsInput(phase) || !acceptsGeneratorFuel(phase)) {
+            if (!storesPhase(phase) || !acceptsInput(phase) || !acceptsGeneratorFuel(phase)) {
                 return 0L;
             }
             long moved = phaseAccepted(phase, amount, phases[phase.index()]);
@@ -568,8 +568,10 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
 
         long[] input = ParticleMath.amountsFromShares(inputTotal, shares());
         long actualInput = 0L;
-        for (int index = 0; index < input.length; index++) {
-            input[index] = Math.min(input[index], mixed[index]);
+        for (Phase phase : Phase.all()) {
+            int index = phase.index();
+            // Phases without a tank on this machine stay in the mixed buffer.
+            input[index] = storesPhase(phase) ? Math.min(input[index], mixed[index]) : 0L;
             actualInput += input[index];
         }
         if (actualInput <= 0L) {
@@ -591,7 +593,7 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
 
         // Precheck every phase tank before extracting anything. If any output
         // cannot fit, skip the whole tick: no input consumed, no energy, no loss.
-        if (!separatorFits(output, phaseAmounts())) {
+        if (!fitsStoredTanks(output)) {
             return 0L;
         }
 
@@ -1537,7 +1539,7 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         long remaining = GENERATOR_OUTPUT_MPU_PER_TICK;
         long pushed = pushToNeighbourStorages(Phase.IMPURE_AETHERON, remaining);
         remaining -= pushed;
-        long tankSpace = Math.max(0L, Phase.IMPURE_AETHERON.tankCapacity() - phases[productIndex]);
+        long tankSpace = Math.max(0L, phaseStorage().getCapacity(Phase.IMPURE_AETHERON) - phases[productIndex]);
         long tankAccepted = Math.min(remaining, tankSpace);
         long overflow = remaining - tankAccepted;
 
@@ -1618,6 +1620,17 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         java.util.List<Phase> phases = Phase.all();
         for (int index = 0; index < output.length && index < phases.size(); index++) {
             if (phaseAmounts[index] + output[index] > phases.get(index).tankCapacity()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Per-machine precheck: storage-less phases have a capacity of zero. */
+    private boolean fitsStoredTanks(long[] output) {
+        for (Phase phase : Phase.all()) {
+            int index = phase.index();
+            if (output[index] > 0L && phases[index] + output[index] > tankCapacityFor(phase)) {
                 return false;
             }
         }
@@ -1977,6 +1990,17 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
      * screen to avoid drawing irrelevant gauges.
      */
     public List<Phase> relevantPhases() {
+        return storagePhases();
+    }
+
+    /**
+     * Phases this machine allocates a phase tank for. Everything else has a
+     * <b>capacity of zero</b> (not merely hidden): the generator only burns
+     * Thermion, the purifier works with impure Aetheron and its three outputs,
+     * and weather blocks have no particle logic. The intake tower and the port
+     * are containers and keep all phases.
+     */
+    public List<Phase> storagePhases() {
         Block block = getBlockState().getBlock();
         if (block == MeteorosProtocol.THERMAL_GENERATOR.get()) {
             return List.of(Phase.THERMION);
@@ -1988,6 +2012,27 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
             return List.of();
         }
         return Phase.all();
+    }
+
+    /** {@code true} when this machine owns a non-zero tank for {@code phase}. */
+    private boolean storesPhase(Phase phase) {
+        Block block = getBlockState().getBlock();
+        if (block == MeteorosProtocol.THERMAL_GENERATOR.get()) {
+            return phase == Phase.THERMION;
+        }
+        if (block == MeteorosProtocol.PHASE_SEPARATOR.get()) {
+            return phase == Phase.IMPURE_AETHERON || phase == Phase.AETHERON
+                    || phase == Phase.THERMION || phase == Phase.CRYON;
+        }
+        if (block == MeteorosProtocol.WEATHER_STATION.get() || block == MeteorosProtocol.WEATHER_TANK.get()) {
+            return false;
+        }
+        return true;
+    }
+
+    /** Real usable capacity of {@code phase}'s tank on this machine (0 when not stored). */
+    private long tankCapacityFor(Phase phase) {
+        return storesPhase(phase) ? phase.tankCapacity() : 0L;
     }
 
     /**
@@ -2245,7 +2290,9 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
      * Public only so the self-test can verify that internal writes bypass it.
      */
     public long addPhaseInternal(Phase phase, long amount) {
-        long moved = phaseAccepted(phase, amount, phases[phase.index()]);
+        long capacity = tankCapacityFor(phase);
+        long room = Math.max(0L, capacity - phases[phase.index()]);
+        long moved = Math.max(0L, Math.min(Math.max(0L, amount), room));
         if (moved > 0L) {
             phases[phase.index()] += moved;
             setChanged();
@@ -2383,6 +2430,20 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         }
         if (tag.contains("SideItem", Tag.TAG_INT)) {
             sideItemMask = tag.getInt("SideItem");
+        }
+
+        // Machines no longer allocate tanks for phases outside their process
+        // (the generator used to keep all seven). Drop stale contents so the
+        // zero capacity is real instead of merely hidden.
+        dropUnstoredTanks();
+    }
+
+    /** Clears phase tanks this machine type does not allocate. */
+    private void dropUnstoredTanks() {
+        for (Phase phase : Phase.all()) {
+            if (!storesPhase(phase)) {
+                phases[phase.index()] = 0L;
+            }
         }
     }
 }
