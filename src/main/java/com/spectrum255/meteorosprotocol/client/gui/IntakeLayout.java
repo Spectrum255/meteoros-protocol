@@ -1,13 +1,13 @@
 package com.spectrum255.meteorosprotocol.client.gui;
 
 /**
- * Single source of truth for the intake tower GUI layout (176 x 180).
+ * Single source of truth for the intake tower GUI layout (176 x 224).
  * Both {@code IntakeScreen} (drawing) and {@code IntakeMenu} (slot positions)
  * read these constants, so the click areas can never drift from the art.
  */
 public final class IntakeLayout {
     public static final int WIDTH = 176;
-    public static final int HEIGHT = 180;
+    public static final int HEIGHT = 224;
 
     /** Title text top edge; 8 px font, no shadow, colour 0xFF404040. */
     public static final int TITLE_Y = 6;
@@ -33,24 +33,25 @@ public final class IntakeLayout {
     private static final int PHASE_BAR_SPAN = 65;
 
     /**
-     * Scrolling horizontal phase rows (the intake tower's phase list). Four
-     * 62 x 10 rows fit between y = 19 and y = 62; a 2 px scrollbar sits at
-     * x = 71 and the wheel scrolls one row at a time. The old {@code PHASE_BAR_*}
-     * constants stay above because other screens may still draw vertical bars.
+     * Scrolling horizontal phase rows (the intake tower's phase list). Seven
+     * 62 x 10 rows fit between y = 19 and y = 96; a 2 px scrollbar sits at
+     * x = 71 and the wheel scrolls one row at a time when more phases register.
+     * The old {@code PHASE_BAR_*} constants stay above because other screens may
+     * still draw vertical bars.
      */
     public static final int PHASE_ROW_X = 8;
     public static final int PHASE_ROW_Y = 19;
     public static final int PHASE_ROW_WIDTH = 62;
     public static final int PHASE_ROW_HEIGHT = 10;
     public static final int PHASE_ROW_STEP = 11;
-    /** Four rows are visible at once; the rest are reached by scrolling. */
-    public static final int PHASE_ROW_VISIBLE = 4;
-    /** Height of the four-row window: three full steps plus the last row (43 px). */
+    /** Seven rows are visible at once (all shipped phases); the rest scroll. */
+    public static final int PHASE_ROW_VISIBLE = 7;
+    /** Height of the seven-row window: six full steps plus the last row (76 px). */
     public static final int PHASE_ROW_WINDOW_HEIGHT = PHASE_ROW_VISIBLE * PHASE_ROW_STEP - 1;
     public static final int PHASE_SCROLLBAR_X = 71;
     public static final int PHASE_SCROLLBAR_Y = 19;
     public static final int PHASE_SCROLLBAR_WIDTH = 2;
-    public static final int PHASE_SCROLLBAR_HEIGHT = 44;
+    public static final int PHASE_SCROLLBAR_HEIGHT = 77;
 
     /**
      * Visible bar width for {@code count} phases. Six phases keep 10 px; seven or
@@ -76,13 +77,13 @@ public final class IntakeLayout {
 
     /** Mixed-buffer bar below the tank (proportion of MIXED_CAPACITY). */
     public static final int MIXED_BAR_X = 8;
-    public static final int MIXED_BAR_Y = 63;
+    public static final int MIXED_BAR_Y = 100;
     public static final int MIXED_BAR_WIDTH = 60;
     public static final int MIXED_BAR_HEIGHT = 6;
 
-    /** Horizontal FE bar outer frame (inner 58 x 4). */
+    /** Horizontal FE bar outer frame (inner 94 x 6). */
     public static final int FE_X = 8;
-    public static final int FE_Y = 72;
+    public static final int FE_Y = 110;
     public static final int FE_WIDTH = 96;
     /** Eight pixels so the energy readout can sit inside the bar. */
     public static final int FE_HEIGHT = 8;
@@ -108,7 +109,7 @@ public final class IntakeLayout {
      * <p>The strip from roughly x = 134..168, y = 18..84 (right of the icon buttons,
      * above the inventory label) is intentionally empty. The user wants machine
      * upgrade slots there once the upgrade system exists ("空位置放置机器升级槽").
-     * Keep the 176 x 180 window and leave this band free so upgrades can be added
+     * Keep the 176 x 224 window and leave this band free so upgrades can be added
      * without redoing this layout; when they land, put 18 x 18 slots here and read
      * their positions from this class like every other control.
      */
@@ -119,11 +120,11 @@ public final class IntakeLayout {
 
     /** Player inventory label and 3 x 9 grid + hotbar. */
     public static final int INVENTORY_LABEL_X = 8;
-    public static final int INVENTORY_LABEL_Y = 86;
+    public static final int INVENTORY_LABEL_Y = 128;
     public static final int INVENTORY_X = 8;
-    public static final int INVENTORY_Y = 98;
+    public static final int INVENTORY_Y = 140;
     public static final int INVENTORY_STEP = 18;
-    public static final int HOTBAR_Y = 156;
+    public static final int HOTBAR_Y = 198;
 
     private IntakeLayout() {
     }

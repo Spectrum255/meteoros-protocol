@@ -1,13 +1,16 @@
-"""Render a 4x mock of the intake tower GUI (176x180) with pure fills.
+"""Render a 4x mock of the intake tower GUI (176x224) with pure fills.
 
 The screens no longer blit custom GUI textures: MeteorosGui draws the vanilla
 container look with `fill` primitives (panel, sunken slots, hollow phase bars).
-This script mirrors those primitives so the layout / contrast can be judged
+Phase rows carry no text at all (amounts live in the tooltip), so the mock
+mirrors that too.
+
+This script mirrors the primitives so the layout / contrast can be judged
 without launching the game. Text uses a system font, so it approximates, not
 replicates, Minecraft's 8 px font.
 
 Usage: python tools/preview_gui_mock.py
-Output: art/gui/preview_intake_176x180.png
+Output: art/gui/preview_intake_176x224.png
 """
 
 from __future__ import annotations
@@ -18,27 +21,27 @@ from PIL import Image, ImageDraw, ImageFont
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GUI = os.path.join(ROOT, "art", "gui")
 ICONS = os.path.join(GUI, "icons")
-OUT = os.path.join(GUI, "preview_intake_176x180.png")
+OUT = os.path.join(GUI, "preview_intake_176x224.png")
 SCALE = 4
 
-W, H = 176, 180
+W, H = 176, 224
 
 # --- layout constants, mirrored from IntakeLayout.java ----------------------
 TITLE_Y = 6
 PHASE_ROW_X, PHASE_ROW_Y, PHASE_ROW_W, PHASE_ROW_H = 8, 19, 62, 10
 PHASE_ROW_STEP = 11
-PHASE_ROW_VISIBLE = 4
-SCROLLBAR = (71, 19, 2, 44)
-MIXED = (8, 63, 60, 6)
-FE = (8, 72, 96, 8)
+PHASE_ROW_VISIBLE = 7
+SCROLLBAR = (71, 19, 2, 77)
+MIXED = (8, 100, 60, 6)
+FE = (8, 110, 96, 8)
 SLOT_FILTER = (76, 20)
 SLOT_LOAD = (76, 44)
 BUTTONS = [(112, 18), (112, 40), (112, 62)]
 BUTTON = 20
-INV_LABEL = (8, 86)
-INV = (8, 98)
+INV_LABEL = (8, 128)
+INV = (8, 140)
 INV_STEP = 18
-HOTBAR_Y = 156
+HOTBAR_Y = 198
 
 # --- vanilla palette (MeteorosGui) -----------------------------------------
 PANEL_BODY = (198, 198, 198, 255)
@@ -52,6 +55,7 @@ MIXED_EMPTY = (85, 85, 85, 255)
 FE_COLOR = (210, 75, 63, 255)
 TITLE_COLOR = (64, 64, 64, 255)
 
+# six core phases + impure aetheron (0xB9BDC0)
 PHASE_COLORS = [
     (255, 255, 255, 255),
     (255, 74, 63, 255),
@@ -59,6 +63,7 @@ PHASE_COLORS = [
     (255, 225, 74, 255),
     (154, 92, 255, 255),
     (58, 84, 224, 255),
+    (185, 189, 192, 255),
 ]
 
 
@@ -93,21 +98,6 @@ def slot(base: Image.Image, x: int, y: int) -> None:
     fill(base, sx + 17, sy, sx + 18, sy + 18, SLOT_LIGHT)
 
 
-def phase_bar(base: Image.Image, x: int, y: int, w: int, h: int,
-              level: float, color, selected: bool = False) -> None:
-    """Mirror of MeteorosGui.phaseBarV: dark interior, hollow edge, colour fill."""
-    fill(base, x, y, x + w, y + h, dark(color))
-    inner_h = h - 2
-    filled = round(max(0.0, min(1.0, level)) * inner_h)
-    if filled > 0:
-        fill(base, x + 1, y + h - 1 - filled, x + w - 1, y + h - 1, color)
-    edge = SLOT_LIGHT if selected else None
-    fill(base, x, y, x + w, y + 1, edge or SLOT_DARK)
-    fill(base, x, y, x + 1, y + h, edge or SLOT_DARK)
-    fill(base, x, y + h - 1, x + w, y + h, edge or SLOT_LIGHT)
-    fill(base, x + w - 1, y, x + w, y + h, edge or SLOT_LIGHT)
-
-
 def phase_bar_h(base: Image.Image, x: int, y: int, w: int, h: int,
                 level: float, color, empty) -> None:
     """Mirror of MeteorosGui.phaseBarH."""
@@ -124,7 +114,10 @@ def phase_bar_h(base: Image.Image, x: int, y: int, w: int, h: int,
 
 def phase_row(base: Image.Image, x: int, y: int, w: int, h: int,
               level: float, color, selected: bool = False) -> None:
-    """Mirror of PhaseRowWidget: dark interior, hollow edge, left-to-right fill."""
+    """Mirror of PhaseRowWidget: dark interior, hollow edge, left-to-right fill.
+
+    No text: the widget stopped drawing labels; amounts are tooltip-only.
+    """
     fill(base, x, y, x + w, y + h, dark(color))
     inner_w = w - 2
     filled = round(max(0.0, min(1.0, level)) * inner_w)
@@ -170,12 +163,11 @@ def main() -> None:
     base = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     panel(base, 0, 0, W, H)
 
-    # seven phase rows (4 visible) + scrollbar, mirroring PhaseRowWidget
-    row_levels = [0.62, 0.41, 0.27, 0.14]
-    row_names = ["Ae", "T", "C", "V+"]
+    # seven phase rows, all visible (no scrolling needed for 7 phases)
+    row_levels = [0.62, 0.41, 0.27, 0.14, 0.09, 0.05, 0.03]
     for i, (color, level) in enumerate(zip(PHASE_COLORS, row_levels)):
         phase_row(base, PHASE_ROW_X, PHASE_ROW_Y + i * PHASE_ROW_STEP,
-                  PHASE_ROW_W, PHASE_ROW_H, level, color, selected=(i == 0))
+                  PHASE_ROW_W, PHASE_ROW_H, level, color, selected=(i == 1))
     scrollbar(base, SCROLLBAR[0], SCROLLBAR[1], SCROLLBAR[2], SCROLLBAR[3],
               PHASE_ROW_VISIBLE, 7, 0)
 
@@ -221,21 +213,14 @@ def main() -> None:
 
     draw.text((INV_LABEL[0] * SCALE, INV_LABEL[1] * SCALE), "玩家背包", font=ui_font, fill=TITLE_COLOR)
 
-    row_font = ImageFont.truetype(os.path.join(font_dir, "msyh.ttc"), 6 * SCALE)
-    for i, lab in enumerate(row_names):
-        tx = (PHASE_ROW_X + 3) * SCALE
-        ty = (PHASE_ROW_Y + i * PHASE_ROW_STEP) * SCALE + 3
-        draw.text((tx + 1, ty + 1), lab, font=row_font, fill=(0, 0, 0, 255))
-        draw.text((tx, ty), lab, font=row_font, fill=(255, 255, 255, 255))
-
     draw.text((12, H * SCALE + 12),
-              "mock only · 176x180 @4x · 全部用 MeteorosGui 的 fill 原语重建，不贴图",
+              "mock only · 176x224 @4x · 全部用 MeteorosGui 的 fill 原语重建，不贴图",
               font=label_font, fill=(210, 214, 220, 255))
     draw.text((12, H * SCALE + 40),
-              "相条：横排 62x10、步长 11、可见 4 行 + 右侧滚动条；第 1 行白框=选中",
+              "相条：横排 62x10、步长 11、7 行一屏全显、行内无文字（数值只在 tooltip）；第 2 行白框=选中",
               font=label_font, fill=(160, 166, 176, 255))
     draw.text((12, H * SCALE + 64),
-              "混合条：灰 #8B8B8B 填充 / #555555 空余；FE 条 96x8 红条带框",
+              "混合条 (8,100) 灰 #8B8B8B / FE 条 (8,110) 96x8 红；背包 140/158/176、快捷栏 198",
               font=label_font, fill=(160, 166, 176, 255))
 
     canvas.convert("RGB").save(OUT)

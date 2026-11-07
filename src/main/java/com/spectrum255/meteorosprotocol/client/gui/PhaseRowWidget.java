@@ -4,9 +4,7 @@ import java.util.function.BooleanSupplier;
 import java.util.function.DoubleSupplier;
 import java.util.function.IntConsumer;
 import java.util.function.IntSupplier;
-import java.util.function.Supplier;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
@@ -24,15 +22,15 @@ import net.minecraft.util.Mth;
  *
  * <p>Render order: 1 px sunken border (dark top/left, white bottom/right), the
  * phase's dim colour as the empty track, then its bright colour filling from the
- * left by tank ratio, the label, a hover wash and finally a white selection
- * frame when this phase is the current extraction target.</p>
+ * left by tank ratio, a hover wash and finally a white selection frame when this
+ * phase is the current extraction target. Rows intentionally draw no text — the
+ * numbers live in the tooltip only, so they can never cover the panel.</p>
  */
 public class PhaseRowWidget extends AbstractWidget {
     private final int index;
     private final DoubleSupplier fill;
     private final IntSupplier color;
     private final IntSupplier darkColor;
-    private final Supplier<Component> text;
     private final BooleanSupplier selected;
     private final IntConsumer onSelect;
 
@@ -45,19 +43,17 @@ public class PhaseRowWidget extends AbstractWidget {
      * @param fill      tank fill ratio in {@code [0, 1]}
      * @param color     ARGB fill colour (normally {@code phase.argb()})
      * @param darkColor ARGB empty-track colour (normally {@code phase.darkArgb()})
-     * @param text      live label, e.g. {@code "T 12.3 kPU"}
      * @param selected  whether this phase is the current extraction target
      * @param onSelect  invoked with {@code index} when the row is clicked
      */
     public PhaseRowWidget(int x, int y, int width, int height, int index,
                           DoubleSupplier fill, IntSupplier color, IntSupplier darkColor,
-                          Supplier<Component> text, BooleanSupplier selected, IntConsumer onSelect) {
+                          BooleanSupplier selected, IntConsumer onSelect) {
         super(x, y, width, height, Component.empty());
         this.index = index;
         this.fill = fill;
         this.color = color;
         this.darkColor = darkColor;
-        this.text = text;
         this.selected = selected;
         this.onSelect = onSelect;
     }
@@ -87,8 +83,6 @@ public class PhaseRowWidget extends AbstractWidget {
         if (this.isHovered()) {
             graphics.fill(x, y, x + width, y + height, MeteorosGui.ROW_HIGHLIGHT);
         }
-        Font font = Minecraft.getInstance().font;
-        MeteorosGui.centeredText(graphics, font, this.text.get(), x + 1, y + 1, innerWidth, innerHeight);
         if (this.selected.getAsBoolean()) {
             drawSelectionFrame(graphics, x, y, width, height);
         }

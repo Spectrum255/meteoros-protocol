@@ -3,6 +3,7 @@ package com.spectrum255.meteorosprotocol.client;
 import com.spectrum255.meteorosprotocol.MeteorosProtocol;
 import com.spectrum255.meteorosprotocol.Config;
 import com.spectrum255.meteorosprotocol.client.gui.IconButton;
+import com.spectrum255.meteorosprotocol.client.gui.IntakeLayout;
 import com.spectrum255.meteorosprotocol.client.gui.MeteorosGui;
 import com.spectrum255.meteorosprotocol.client.gui.PhaseRowWidget;
 import com.spectrum255.meteorosprotocol.client.gui.SideConfigPanel;
@@ -38,7 +39,7 @@ import java.util.List;
  */
 public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMenu> {
     private static final int WIDTH = 176;
-    private static final int HEIGHT = 180;
+    private static final int HEIGHT = 224;
     private static final int TITLE_Y = 6;
     private static final int TITLE_COLOR = 0xFF404040;
 
@@ -55,7 +56,7 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
     private static final int MIXED_HEIGHT = 4;
     private static final int MIXED_COLOR = 0xFF8B8B8B;
 
-    /** Scrolling phase rows: three visible at once, 32 px window, wheel scrolls. */
+    /** Scrolling phase rows: five visible at once, 55 px window, wheel scrolls. */
     private static final int ROW_X = 8;
     private static final int ROW_Y = 44;
     /** Purifier hides the mixed bar, so its row window starts 3 px higher. */
@@ -63,14 +64,14 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
     private static final int ROW_WIDTH = 96;
     private static final int ROW_HEIGHT = 10;
     private static final int ROW_STEP = 11;
-    private static final int ROW_VISIBLE = 3;
+    private static final int ROW_VISIBLE = 5;
     private static final int ROW_WINDOW_HEIGHT = ROW_VISIBLE * ROW_STEP - 1;
     private static final int SCROLLBAR_X = 106;
     private static final int SCROLLBAR_WIDTH = 2;
-    private static final int SCROLLBAR_HEIGHT = 32;
+    private static final int SCROLLBAR_HEIGHT = 55;
 
     private static final int STATUS_X = 8;
-    private static final int STATUS_Y = 17;
+    private static final int STATUS_Y = 104;
     private static final int STATUS_COLOR = 0xFF404040;
 
     private static final int BUTTON_X = 112;
@@ -158,7 +159,6 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
                     () -> tankFill(index),
                     phase::argb,
                     phase::darkArgb,
-                    () -> phaseRowText(index),
                     () -> this.pinnedIndex == index,
                     selected -> this.pinnedIndex = selected));
             this.phaseRows.add(row);
@@ -183,13 +183,6 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
             return 0.0F;
         }
         return (float) Math.min(1.0, (double) this.menu.tankAmount(index) / (double) capacity);
-    }
-
-    /** Row label: short phase name plus the tank amount, e.g. {@code "T 12.3 kPU"}. */
-    private Component phaseRowText(int index) {
-        Phase phase = Phase.all().get(index);
-        return Component.literal(phase.shortName().getString() + " "
-                + ParticleFormat.formatMPU(this.menu.tankAmount(index)));
     }
 
     /**
@@ -281,14 +274,14 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
 
         for (int row = 0; row < 3; row++) {
             for (int col = 0; col < 9; col++) {
-                int slotX = x + 8 + col * 18;
-                int slotY = y + 98 + row * 18;
+                int slotX = x + IntakeLayout.INVENTORY_X + col * IntakeLayout.INVENTORY_STEP;
+                int slotY = y + IntakeLayout.INVENTORY_Y + row * IntakeLayout.INVENTORY_STEP;
                 MeteorosGui.slot(graphics, slotX, slotY, inside(mouseX, mouseY, slotX, slotY, 16, 16));
             }
         }
         for (int col = 0; col < 9; col++) {
-            int slotX = x + 8 + col * 18;
-            int slotY = y + 156;
+            int slotX = x + IntakeLayout.INVENTORY_X + col * IntakeLayout.INVENTORY_STEP;
+            int slotY = y + IntakeLayout.HOTBAR_Y;
             MeteorosGui.slot(graphics, slotX, slotY, inside(mouseX, mouseY, slotX, slotY, 16, 16));
         }
     }
@@ -309,7 +302,7 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
                 : "gui.meteorosprotocol.machine.idle");
         graphics.drawString(this.font, state, STATUS_X, STATUS_Y, STATUS_COLOR, false);
 
-        MeteorosGui.label(graphics, this.font, this.playerInventoryTitle, 8, 86);
+        MeteorosGui.label(graphics, this.font, this.playerInventoryTitle, 8, IntakeLayout.INVENTORY_LABEL_Y);
     }
 
     @Override

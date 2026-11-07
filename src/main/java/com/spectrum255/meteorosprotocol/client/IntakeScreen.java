@@ -123,7 +123,6 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
                     () -> phaseFill(index),
                     () -> Phase.all().get(index).argb(),
                     () -> Phase.all().get(index).darkArgb(),
-                    () -> phaseRowText(index),
                     () -> this.menu.canisterPhaseIndex() == index,
                     id -> sendButton(2 + id)));
             this.phaseRows.add(row);
@@ -154,13 +153,6 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
             return 0.0F;
         }
         return (float) ((double) this.menu.phaseAmount(index) / (double) capacity);
-    }
-
-    /** Row label: short phase name plus the tank amount, e.g. {@code "T 12.3 kPU"}. */
-    private Component phaseRowText(int index) {
-        Phase phase = Phase.all().get(index);
-        return Component.literal(phase.shortName().getString() + " "
-                + ParticleFormat.formatMPU(this.menu.phaseAmount(index)));
     }
 
     /** Phases currently listed: non-empty tanks plus the selected phase, oldest arrival first. */
