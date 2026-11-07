@@ -59,11 +59,12 @@ public class MachineStatusMenu extends AbstractContainerMenu {
     private final int energyMaskIndex;
     private final int itemMaskIndex;
     private final int autoIoIndex;
+    private final int arrivalBase;
     private ContainerData data;
 
-    /** 3 header ints + mixed buffer + phase tanks + four side masks + auto I/O. */
+    /** 3 header ints + mixed buffer + phase tanks + four side masks + auto I/O + arrival order. */
     public static int dataCount() {
-        return 3 + 2 * Phase.all().size() + 5;
+        return 3 + 3 * Phase.all().size() + 5;
     }
 
     public MachineStatusMenu(int containerId, Inventory inventory, MachineBlockEntity machine) {
@@ -88,6 +89,7 @@ public class MachineStatusMenu extends AbstractContainerMenu {
         this.energyMaskIndex = phaseMaskIndex + 1;
         this.itemMaskIndex = energyMaskIndex + 1;
         this.autoIoIndex = itemMaskIndex + 1;
+        this.arrivalBase = autoIoIndex + 1;
         this.syncedData = new int[dataCount()];
 
         for (int row = 0; row < 3; row++) {
@@ -164,6 +166,9 @@ public class MachineStatusMenu extends AbstractContainerMenu {
         }
         if (index == autoIoIndex) {
             return machine.autoIo() ? 1 : 0;
+        }
+        if (index >= arrivalBase && index < arrivalBase + phaseCount) {
+            return machine.arrivalSeq(index - arrivalBase);
         }
         return 0;
     }
@@ -265,6 +270,11 @@ public class MachineStatusMenu extends AbstractContainerMenu {
     /** Master switch for the machine's active I/O pass. */
     public boolean autoIo() {
         return data(autoIoIndex) != 0;
+    }
+
+    /** Arrival order of a phase tank (-1 = empty), used for row ordering. */
+    public int arrivalSeq(int index) {
+        return index >= 0 && index < phaseCount ? data(arrivalBase + index) : -1;
     }
 
     /**

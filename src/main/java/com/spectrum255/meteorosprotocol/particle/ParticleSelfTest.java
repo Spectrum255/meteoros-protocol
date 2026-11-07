@@ -598,6 +598,39 @@ public final class ParticleSelfTest {
         generator.loadAdditional(legacyTag, RegistryAccess.EMPTY);
         require(generator.autoIo(), "saves without AutoIo must default to true");
 
+        // Arrival order: first-in-first-shown. Emptying a tank clears its slot and
+        // a later refill counts as a new arrival; the order round-trips through NBT.
+        MachineBlockEntity arrival = new MachineBlockEntity(
+                BlockPos.ZERO, MeteorosProtocol.PHASE_SEPARATOR.get().defaultBlockState());
+        require(arrival.arrivalSeq(Phase.AETHERON.index()) == -1,
+                "empty tanks must start without an arrival slot");
+        arrival.phaseStorage().insert(Phase.AETHERON, 10L, false);
+        arrival.refreshArrivalOrderForSelfTest();
+        int firstSeq = arrival.arrivalSeq(Phase.AETHERON.index());
+        require(firstSeq >= 1, "a filled tank must get a positive arrival slot");
+        arrival.phaseStorage().insert(Phase.THERMION, 10L, false);
+        arrival.refreshArrivalOrderForSelfTest();
+        int secondSeq = arrival.arrivalSeq(Phase.THERMION.index());
+        require(secondSeq > firstSeq, "a later tank must get a larger arrival slot");
+        arrival.phaseStorage().extract(Phase.AETHERON, 10L, false);
+        arrival.refreshArrivalOrderForSelfTest();
+        require(arrival.arrivalSeq(Phase.AETHERON.index()) == -1,
+                "an emptied tank must clear its arrival slot");
+        arrival.phaseStorage().insert(Phase.AETHERON, 10L, false);
+        arrival.refreshArrivalOrderForSelfTest();
+        require(arrival.arrivalSeq(Phase.AETHERON.index()) > secondSeq,
+                "refilling an emptied tank must count as a new arrival");
+        CompoundTag arrivalTag = new CompoundTag();
+        arrival.saveAdditional(arrivalTag, RegistryAccess.EMPTY);
+        require(arrivalTag.contains("ArrivalSeq"), "arrival order must save under 'ArrivalSeq'");
+        MachineBlockEntity arrivalLoaded = new MachineBlockEntity(
+                BlockPos.ZERO, MeteorosProtocol.PHASE_SEPARATOR.get().defaultBlockState());
+        arrivalLoaded.loadAdditional(arrivalTag, RegistryAccess.EMPTY);
+        for (Phase phase : Phase.all()) {
+            require(arrivalLoaded.arrivalSeq(phase.index()) == arrival.arrivalSeq(phase.index()),
+                    "arrival order must round-trip through NBT");
+        }
+
         // Button ids must stay clear of the per-phase selection range: adding the
         // seventh phase shifted the extract id from 8 to 9, so the old hard-coded
         // screen ids silently selected a phase instead. Check the formula for

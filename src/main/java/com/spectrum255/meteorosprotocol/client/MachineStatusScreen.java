@@ -198,16 +198,29 @@ public class MachineStatusScreen extends AbstractContainerScreen<MachineStatusMe
      * only shows phases that actually hold particles, plus the pinned row.
      */
     private List<Phase> displayedPhases() {
-        List<Phase> phases = this.menu.relevantPhases();
-        if (this.menu.kind() != MachineStatusMenu.KIND_GENERIC) {
-            return phases;
-        }
+        List<Phase> owned = this.menu.relevantPhases();
         List<Phase> shown = new ArrayList<>();
-        for (Phase phase : phases) {
-            if (this.menu.tankAmount(phase.index()) > 0L || phase.index() == this.pinnedIndex) {
+        for (Phase phase : owned) {
+            if (this.menu.kind() != MachineStatusMenu.KIND_GENERIC
+                    || this.menu.tankAmount(phase.index()) > 0L
+                    || phase.index() == this.pinnedIndex) {
                 shown.add(phase);
             }
         }
+        shown.sort((left, right) -> {
+            int leftSeq = this.menu.arrivalSeq(left.index());
+            int rightSeq = this.menu.arrivalSeq(right.index());
+            if (leftSeq != rightSeq) {
+                if (leftSeq < 0) {
+                    return 1;
+                }
+                if (rightSeq < 0) {
+                    return -1;
+                }
+                return Integer.compare(leftSeq, rightSeq);
+            }
+            return Integer.compare(left.index(), right.index());
+        });
         return shown;
     }
 

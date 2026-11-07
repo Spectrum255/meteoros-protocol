@@ -163,7 +163,7 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
                 + ParticleFormat.formatMPU(this.menu.phaseAmount(index)));
     }
 
-    /** Phases currently listed: non-empty tanks plus the selected phase. */
+    /** Phases currently listed: non-empty tanks plus the selected phase, oldest arrival first. */
     private List<Phase> displayedPhases() {
         int selected = this.menu.canisterPhaseIndex();
         List<Phase> shown = new ArrayList<>();
@@ -172,6 +172,20 @@ public class IntakeScreen extends AbstractContainerScreen<IntakeMenu> {
                 shown.add(phase);
             }
         }
+        shown.sort((left, right) -> {
+            int leftSeq = this.menu.arrivalSeq(left.index());
+            int rightSeq = this.menu.arrivalSeq(right.index());
+            if (leftSeq != rightSeq) {
+                if (leftSeq < 0) {
+                    return 1;
+                }
+                if (rightSeq < 0) {
+                    return -1;
+                }
+                return Integer.compare(leftSeq, rightSeq);
+            }
+            return Integer.compare(left.index(), right.index());
+        });
         return shown;
     }
 

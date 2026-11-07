@@ -9,6 +9,7 @@ import com.spectrum255.meteorosprotocol.item.CanisterItem;
 import com.spectrum255.meteorosprotocol.item.FilterItem;
 import com.spectrum255.meteorosprotocol.item.InfiniteParticleCanisterItem;
 import com.spectrum255.meteorosprotocol.particle.*;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import net.minecraft.core.BlockPos;
@@ -109,6 +110,14 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
 
     private final long[] mixed = new long[Phase.all().size()];
     private final long[] phases = new long[Phase.all().size()];
+    /**
+     * Arrival order of the phase tanks: the first phase to fill a tank gets the
+     * smallest positive number, so the GUI can list rows "first in, first
+     * shown". -1 means the tank is currently empty (and a later refill counts
+     * as a new arrival).
+     */
+    private final int[] arrivalSeq = emptyArrivalSequence();
+    private int nextArrivalSeq = 1;
     private final PhaseStorage phaseStorage = new PhaseStorage() {
         @Override
         public long getAmount(Phase phase) {
@@ -431,6 +440,9 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
                 || machine.progress % 10L == 0L) {
             machine.syncComposition(level, pos, state);
         }
+        // One 7-element scan per tick keeps the GUI's "first in, first shown"
+        // order current without sprinkling calls across every write site.
+        machine.updateArrivalOrder();
     }
 
     private void tickIntake(ServerLevel level, BlockPos pos) {
@@ -1577,6 +1589,11 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         return energy < before;
     }
 
+    /** Test hook: refreshes the arrival order without waiting for a server tick. */
+    public void refreshArrivalOrderForSelfTest() {
+        updateArrivalOrder();
+    }
+
     /** {@code (input * 95 + carry) / 100}; the separator's output this tick. */
     public static long separatorOutput(long input, long carry) {
         if (input <= 0L) {
@@ -1962,6 +1979,14 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
 
     public RedstoneMode redstoneMode() {
         return redstoneMode;
+    }
+
+    /**
+     * Arrival order of a phase tank: smaller means "stored earlier", -1 means
+     * the tank is empty. The GUI uses this for its first-in-first-shown rows.
+     */
+    public int arrivalSeq(int phaseIndex) {
+        return phaseIndex >= 0 && phaseIndex < arrivalSeq.length ? arrivalSeq[phaseIndex] : -1;
     }
 
     public void cycleRedstoneMode() {
@@ -2374,6 +2399,8 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         tag.putInt("SidePhase", sidePhaseMask);
         tag.putInt("SideEnergy", sideEnergyMask);
         tag.putInt("SideItem", sideItemMask);
+        tag.putIntArray("ArrivalSeq", arrivalSeq);
+        tag.putInt("NextArrivalSeq", nextArrivalSeq);
     }
 
     @Override
@@ -2432,6 +2459,23 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
             sideItemMask = tag.getInt("SideItem");
         }
 
+        // Arrival order is a pure display hint; if the saved array does not match
+        // the current phase count, rebuild it from the tanks on the next tick.
+        int[] savedArrival = tag.getIntArray("ArrivalSeq");
+        if (savedArrival.length == arrivalSeq.length) {
+            for (int index = 0; index < arrivalSeq.length; index++) {
+                arrivalSeq[index] = savedArrival[index] < 0 ? -1 : savedArrival[index];
+            }
+        } else {
+            Arrays.fill(arrivalSeq, -1);
+        }
+        nextArrivalSeq = Math.max(1, tag.getInt("NextArrivalSeq"));
+        for (int sequence : arrivalSeq) {
+            if (sequence >= nextArrivalSeq) {
+                nextArrivalSeq = sequence + 1;
+            }
+        }
+
         // Machines no longer allocate tanks for phases outside their process
         // (the generator used to keep all seven). Drop stale contents so the
         // zero capacity is real instead of merely hidden.
@@ -2443,6 +2487,27 @@ public class MachineBlockEntity extends BlockEntity implements MixedStorage, Men
         for (Phase phase : Phase.all()) {
             if (!storesPhase(phase)) {
                 phases[phase.index()] = 0L;
+            }
+        }
+    }
+
+    /** Arrival sequence array with every tank marked empty. */
+    private static int[] emptyArrivalSequence() {
+        int[] sequence = new int[Phase.all().size()];
+        Arrays.fill(sequence, -1);
+        return sequence;
+    }
+
+    /**
+     * Refreshes the "first in, first shown" order after tank contents changed.
+     * Called once per server tick instead of at every write site.
+     */
+    private void updateArrivalOrder() {
+        for (int index = 0; index < phases.length; index++) {
+            if (phases[index] > 0L && arrivalSeq[index] < 0) {
+                arrivalSeq[index] = nextArrivalSeq++;
+            } else if (phases[index] <= 0L && arrivalSeq[index] >= 0) {
+                arrivalSeq[index] = -1;
             }
         }
     }
