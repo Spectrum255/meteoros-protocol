@@ -7,6 +7,7 @@ import com.spectrum255.meteorosprotocol.particle.PhaseSampler;
 import com.spectrum255.meteorosprotocol.particle.PhaseSamplers;
 import com.spectrum255.meteorosprotocol.particle.PhaseRegistry;
 import com.spectrum255.meteorosprotocol.particle.SimpleBiomeField;
+import com.spectrum255.meteorosprotocol.particle.StratosphereParticleModifier;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 
@@ -37,7 +38,8 @@ public final class WeatherAdjustedField implements ParticleField {
     @Override
     public FieldSample sample(ServerLevel level, BlockPos pos) {
         FieldSample original = base.sample(level, pos);
-        FieldSample weathered = WeatherParticleModifier.apply(level, pos, original).sample();
+        FieldSample stratospheric = StratosphereParticleModifier.apply(level, pos, original);
+        FieldSample weathered = WeatherParticleModifier.apply(level, pos, stratospheric).sample();
         FieldSample lit = LightHeatParticleModifier.apply(level, pos, weathered);
         FieldSample tempered = TemperatureProbe.apply(level, pos, lit);
         return applySamplers(level, pos, tempered);

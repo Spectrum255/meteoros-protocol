@@ -207,5 +207,6 @@
   "meteorosprotocol.configuration.netherAqueous": "Nether Aqueous",
   "meteorosprotocol.configuration.endThermal": "End Thermal",
   "meteorosprotocol.configuration.endCharge": "End Charge",
-  "meteorosprotocol.configuration.endAqueous": "End Aqueous"
+  "meteorosprotocol.configuration.endAqueous": "End Aqueous",
+  "biome.meteorosprotocol.stratosphere": "Stratosphere"
 }

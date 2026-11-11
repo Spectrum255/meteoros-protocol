@@ -208,5 +208,6 @@
   "meteorosprotocol.configuration.netherAqueous": "下界水倍率",
   "meteorosprotocol.configuration.endThermal": "末地热倍率",
   "meteorosprotocol.configuration.endCharge": "末地电荷倍率",
-  "meteorosprotocol.configuration.endAqueous": "末地水倍率"
+  "meteorosprotocol.configuration.endAqueous": "末地水倍率",
+  "biome.meteorosprotocol.stratosphere": "平流层"
 }

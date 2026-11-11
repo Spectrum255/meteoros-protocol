@@ -9,6 +9,7 @@ import com.spectrum255.meteorosprotocol.particle.FieldSample;
 import com.spectrum255.meteorosprotocol.particle.Phase;
 import com.spectrum255.meteorosprotocol.particle.Saturation;
 import com.spectrum255.meteorosprotocol.particle.SimpleBiomeField;
+import com.spectrum255.meteorosprotocol.particle.StratosphereParticleModifier;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -110,6 +111,9 @@ public final class ParticleDebugOverlay {
         }
         if (phases.size() > shown) {
             text.append(" +").append(phases.size() - shown).append(" more");
+        }
+        if (cachedPos != null && StratosphereParticleModifier.isStratosphere(cachedPos.getY())) {
+            text.append(" | strato");
         }
         return text.toString();
     }

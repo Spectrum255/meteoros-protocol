@@ -2,7 +2,9 @@
   "required": true,
   "package": "com.spectrum255.meteorosprotocol.mixin",
   "compatibilityLevel": "JAVA_21",
-  "mixins": [],
+  "mixins": [
+    "StratosphereBiomeMixin"
+  ],
   "injectors": {
     "defaultRequire": 1
   },

@@ -85,6 +85,38 @@ public final class MeteorosCommands {
         source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
                 "  intake capture loss: %d%% (Thermion/Cryon/Aetheron lossy, Voltix/Aquantum lossless)",
                 Math.round(MachineBlockEntity.intakeCaptureLossRatio() * 100.0D))), false);
+        if (StratosphereParticleModifier.isAtmosphere(pos.getY())) {
+            int stratosphereStart = StratosphereParticleModifier.startY();
+            int transitionStart = StratosphereParticleModifier.transitionStartY();
+            float t = StratosphereParticleModifier.transitionFactor(pos.getY(), stratosphereStart, transitionStart);
+            float height = StratosphereParticleModifier.heightAbove(pos.getY(), stratosphereStart);
+            boolean skyVisible = level.canSeeSky(pos);
+            boolean requireSky = StratosphereParticleModifier.requireSky();
+            float darkness = Math.max(0, Math.min(StratosphereParticleModifier.MAX_SKY_DARKEN, skyDarken))
+                    / (float) StratosphereParticleModifier.MAX_SKY_DARKEN;
+            float thinAir = StratosphereParticleModifier.thinAirFactor();
+            float aqua = StratosphereParticleModifier.aquaFactor();
+            float thinEffective = 1.0F - (1.0F - thinAir) * t;
+            float aquaEffective = 1.0F - (1.0F - aqua) * t;
+            float top = StratosphereParticleModifier.bandTop(
+                    StratosphereParticleModifier.aetheronPerBlock(), stratosphereStart, transitionStart);
+            boolean aboveStart = pos.getY() > stratosphereStart;
+            float aetheronGain = aboveStart
+                    ? top + height * StratosphereParticleModifier.aetheronPerBlock()
+                    : top * t;
+            float ionGain = aboveStart ? height * StratosphereParticleModifier.ionPerBlock() : 0.0F;
+            if (requireSky && !skyVisible) {
+                aetheronGain = 0.0F;
+                ionGain = 0.0F;
+            }
+            float aetheronBonus = aetheronGain;
+            float dayBonus = ionGain * (1.0F - darkness);
+            float nightBonus = ionGain * darkness;
+            source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                    "  strato: t=%.2f h=%.0f thin=%.2f aq=%.2f Ae+%.2f | V+ +%.2f / V- +%.2f | sky=%s",
+                    t, height, thinEffective, aquaEffective, aetheronBonus, dayBonus, nightBonus,
+                    skyVisible ? "yes" : "no")), false);
+        }
         return 1;
     }
 

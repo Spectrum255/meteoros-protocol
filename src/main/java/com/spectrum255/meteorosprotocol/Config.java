@@ -260,6 +260,38 @@ public final class Config {
                 .defineInRange("radius", 5, 1, 8);
         BUILDER.pop();
 
+        BUILDER.comment("Stratosphere (y above startY): thinner air, much less aqueous phase, more"
+                        + " Aetheron, and a day/night charge split.")
+                .push("stratosphere");
+        PF_STRATOSPHERE_ENABLED = BUILDER
+                .comment("Apply the stratosphere particle-field modifier above startY (default true).")
+                .define("enabled", true);
+        PF_STRATOSPHERE_START_Y = BUILDER
+                .comment("First block Y that counts as stratosphere is startY + 1 (default 720, 320-960).")
+                .defineInRange("startY", 720, 320, 960);
+        PF_STRATOSPHERE_TRANSITION_START_Y = BUILDER
+                .comment("Start of the continuous 320-720 transition band; values above startY are"
+                        + " clamped to startY - 1 at runtime (default 320, 0-720).")
+                .defineInRange("transitionStartY", 320, 0, 720);
+        PF_STRATOSPHERE_REQUIRE_SKY = BUILDER
+                .comment("Only grant the Aetheron gain and the Voltix ionisation when the position can"
+                        + " see the sky (default true).")
+                .define("requireSky", true);
+        PF_STRATOSPHERE_THIN_AIR = BUILDER
+                .comment("Thin-air multiplier applied to Thermion, Cryon, Voltix and Aqueous (default 0.60).")
+                .defineInRange("thinAirFactor", 0.60, 0.0, 1.0);
+        PF_STRATOSPHERE_AETHERON_PER_BLOCK = BUILDER
+                .comment("Aetheron added per block above startY (default 0.08).")
+                .defineInRange("aetheronPerBlock", 0.08, 0.0, 10.0);
+        PF_STRATOSPHERE_AQUA_FACTOR = BUILDER
+                .comment("Extra Aqueous multiplier applied after the thin-air factor (default 0.10).")
+                .defineInRange("aquaFactor", 0.10, 0.0, 1.0);
+        PF_STRATOSPHERE_ION_PER_BLOCK = BUILDER
+                .comment("Voltix added per block above startY, split between V+ (day) and V- (night)"
+                        + " (default 0.03).")
+                .defineInRange("ionPerBlock", 0.03, 0.0, 10.0);
+        BUILDER.pop();
+
         BUILDER.pop();
     }
 
@@ -355,6 +387,16 @@ public final class Config {
     public static final ModConfigSpec.DoubleValue PF_TEMP_CHILL_MAX;
     public static final ModConfigSpec.DoubleValue PF_TEMP_CRYON_SHARE;
     public static final ModConfigSpec.IntValue PF_TEMP_RADIUS;
+
+    // Stratosphere
+    public static final ModConfigSpec.BooleanValue PF_STRATOSPHERE_ENABLED;
+    public static final ModConfigSpec.IntValue PF_STRATOSPHERE_START_Y;
+    public static final ModConfigSpec.IntValue PF_STRATOSPHERE_TRANSITION_START_Y;
+    public static final ModConfigSpec.BooleanValue PF_STRATOSPHERE_REQUIRE_SKY;
+    public static final ModConfigSpec.DoubleValue PF_STRATOSPHERE_THIN_AIR;
+    public static final ModConfigSpec.DoubleValue PF_STRATOSPHERE_AETHERON_PER_BLOCK;
+    public static final ModConfigSpec.DoubleValue PF_STRATOSPHERE_AQUA_FACTOR;
+    public static final ModConfigSpec.DoubleValue PF_STRATOSPHERE_ION_PER_BLOCK;
 
     static final ModConfigSpec SPEC = BUILDER.build();
 

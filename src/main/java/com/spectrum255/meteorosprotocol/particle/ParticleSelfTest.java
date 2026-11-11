@@ -51,6 +51,7 @@ public final class ParticleSelfTest {
         check(failures, "side config", ParticleSelfTest::sideConfig);
         check(failures, "number formatting", ParticleSelfTest::numberFormatting);
         check(failures, "intake loss and purifier", ParticleSelfTest::intakeAndPurifier);
+        check(failures, "stratosphere", ParticleSelfTest::stratosphere);
         return failures;
     }
 
@@ -869,6 +870,89 @@ public final class ParticleSelfTest {
                 "formatFE(999980) should promote to \"1 MFE\", got " + ParticleFormat.formatFE(999_980L));
         require("12,345,678 mPU".equals(ParticleFormat.formatPlain(12_345_678L, "mPU")),
                 "formatPlain should keep thousands separators");
+    }
+
+    private static void stratosphere() {
+        FieldSample base = new FieldSample(10.0F, 8.0F, 4.0F, 6.0F, 20.0F, 5.0F);
+        int start = 720;
+        int transition = 320;
+        float thin = 0.60F;
+        float perBlock = 0.08F;
+        float aqua = 0.10F;
+        float ion = 0.03F;
+
+        FieldSample atTransition = sampleAt(base, 320.0F, 0, true, true, start, transition,
+                thin, perBlock, aqua, ion);
+        require(sameSample(atTransition, base), "y=transitionStartY must be unchanged");
+
+        FieldSample y400 = sampleAt(base, 400.0F, 0, true, true, start, transition, thin, perBlock, aqua, ion);
+        float t400 = 0.20F;
+        float thin400 = 1.0F - (1.0F - thin) * t400;
+        float aqua400 = 1.0F - (1.0F - aqua) * t400;
+        require(near(thin400, 0.92F), "y=400 thin factor should be 0.92, got " + thin400);
+        require(near(y400.thermion(), base.thermion() * thin400), "y=400 T should be scaled by the ramp");
+        require(near(y400.aquantum(), base.aquantum() * thin400 * aqua400),
+                "y=400 Aq should be scaled by thin*0.92 and aqua*0.82 (combined 0.7544)");
+        require(near(y400.aetheron(), base.aetheron() + 1.28F), "y=400 Ae should gain 1.28");
+        require(near(y400.voltixPos(), base.voltixPos() * thin400), "the transition band must not ionise");
+
+        FieldSample y719 = sampleAt(base, 719.9F, 0, true, true, start, transition, thin, perBlock, aqua, ion);
+        FieldSample y720 = sampleAt(base, 720.0F, 0, true, true, start, transition, thin, perBlock, aqua, ion);
+        require(near(y720.aetheron(), base.aetheron() + 6.4F), "y=720 Ae should gain bandTop 6.4");
+        require(near(y720.voltixPos(), base.voltixPos() * thin), "y=720 must not ionise yet");
+        require(Math.abs(y719.aetheron() - y720.aetheron()) < 0.01F,
+                "y=719.9 and y=720 must be continuous");
+
+        float height = 80.0F;
+        FieldSample day = sampleAt(base, 800.0F, 0, true, true, start, transition, thin, perBlock, aqua, ion);
+        require(near(day.aetheron(), base.aetheron() + 12.8F),
+                "y=800 Ae should be bandTop + h*perBlock = 12.8");
+        require(near(day.thermion(), base.thermion() * thin), "y=800 T should be scaled by 0.60");
+        require(near(day.aquantum(), base.aquantum() * thin * aqua), "y=800 Aq should be scaled by 0.06");
+        require(near(day.voltixPos(), base.voltixPos() * thin + height * ion),
+                "V+ should gain h*ion during the day");
+        require(near(day.voltixNeg(), base.voltixNeg() * thin), "V- should gain nothing during the day");
+
+        FieldSample night = sampleAt(base, 800.0F, 11, true, true, start, transition, thin, perBlock, aqua, ion);
+        require(near(night.voltixPos(), base.voltixPos() * thin), "V+ should gain nothing at night");
+        require(near(night.voltixNeg(), base.voltixNeg() * thin + height * ion),
+                "V- should gain the night bonus");
+        require(near(night.aetheron(), base.aetheron() + 12.8F), "Ae gain must not depend on the time of day");
+
+        FieldSample noSky = sampleAt(base, 800.0F, 0, false, true, start, transition, thin, perBlock, aqua, ion);
+        require(near(noSky.aetheron(), base.aetheron()), "no sky must zero the Ae gain");
+        require(near(noSky.voltixPos(), base.voltixPos() * thin), "no sky must zero the ionisation");
+        require(near(noSky.thermion(), base.thermion() * thin), "no sky must keep the thin-air penalty");
+
+        FieldSample skyOff = sampleAt(base, 800.0F, 0, false, false, start, transition, thin, perBlock, aqua, ion);
+        require(near(skyOff.aetheron(), base.aetheron() + 12.8F),
+                "requireSky=false should restore the Ae gain");
+        require(near(skyOff.voltixPos(), base.voltixPos() * thin + height * ion),
+                "requireSky=false should restore the ionisation");
+
+        require(StratosphereParticleModifier.isStratosphere(721, true, 720), "y=start+1 should match");
+        require(!StratosphereParticleModifier.isStratosphere(720, true, 720), "y=start should not match");
+        require(!StratosphereParticleModifier.isStratosphere(800, false, 720), "disabled should never match");
+
+        require(near(TemperatureProbe.ambientForStratosphere(720, 720), 240.0),
+                "stratosphere ambient at y=720 should be 240 K");
+        require(near(TemperatureProbe.ambientForStratosphere(800, 720), 252.0),
+                "stratosphere ambient at y=800 should be 252 K");
+        require(near(TemperatureProbe.ambientForStratosphere(960, 720), 276.0),
+                "stratosphere ambient at y=960 should be 276 K");
+    }
+
+    private static FieldSample sampleAt(FieldSample base, float y, int skyDarken, boolean skyVisible,
+                                        boolean requireSky, int startY, int transitionStartY,
+                                        float thin, float perBlock, float aqua, float ion) {
+        return StratosphereParticleModifier.apply(base, y, startY, transitionStartY, skyDarken,
+                skyVisible, requireSky, thin, perBlock, aqua, ion);
+    }
+
+    private static boolean sameSample(FieldSample left, FieldSample right) {
+        return left.thermion() == right.thermion() && left.cryon() == right.cryon()
+                && left.voltixPos() == right.voltixPos() && left.voltixNeg() == right.voltixNeg()
+                && left.aquantum() == right.aquantum() && left.aetheron() == right.aetheron();
     }
 
     private static float sum(float[] values) {

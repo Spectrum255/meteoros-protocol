@@ -5,6 +5,7 @@ import java.util.Map;
 
 import com.spectrum255.meteorosprotocol.Config;
 import com.spectrum255.meteorosprotocol.particle.FieldSample;
+import com.spectrum255.meteorosprotocol.particle.StratosphereParticleModifier;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceKey;
@@ -30,6 +31,8 @@ public final class TemperatureProbe {
 
     public static final double AMBIENT_MIN = 240.0;
     public static final double AMBIENT_MAX = 360.0;
+    /** Kelvin gained per block above the stratosphere start (v1.1 temperature inversion). */
+    public static final double STRATOSPHERE_WARMING_PER_BLOCK = 0.15;
     public static final double LOCAL_MIN = 200.0;
     public static final double LOCAL_MAX = 1500.0;
 
@@ -55,8 +58,21 @@ public final class TemperatureProbe {
 
     /** Ambient temperature in Kelvin for a biome base temperature at a height. */
     public static double ambientFor(float biomeBaseTemperature, int y) {
+        // v1.1 temperature inversion: above the stratosphere start the air warms with
+        // height again (ozone layer), and the biome term no longer applies.
+        if (StratosphereParticleModifier.enabled()) {
+            int startY = StratosphereParticleModifier.startY();
+            if (y > startY) {
+                return ambientForStratosphere(y, startY);
+            }
+        }
         return Mth.clamp(300.0 + 25.0 * (biomeBaseTemperature - 0.8) - 0.15 * (y - 64),
                 AMBIENT_MIN, AMBIENT_MAX);
+    }
+
+    /** Pure stratosphere ambient: 240 K at {@code startY}, +0.15 K per block above it. */
+    public static double ambientForStratosphere(int y, int startY) {
+        return AMBIENT_MIN + (y - startY) * STRATOSPHERE_WARMING_PER_BLOCK;
     }
 
     /** Ambient temperature at the position, using the biome's base temperature. */
