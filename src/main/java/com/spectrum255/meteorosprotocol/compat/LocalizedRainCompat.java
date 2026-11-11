@@ -6,6 +6,7 @@ import java.util.Set;
 import com.spectrum255.localizedrain.weather.BiomePatches;
 import com.spectrum255.localizedrain.weather.WeatherData;
 import com.spectrum255.localizedrain.weather.WeatherManager;
+import com.spectrum255.meteorosprotocol.particle.StratosphereParticleModifier;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
@@ -17,34 +18,50 @@ import net.minecraft.server.level.ServerLevel;
  * <p>All methods must be called on the server main thread. Weather is stored per
  * connected biome patch, not per rectangle; {@link #setWeatherInArea} samples
  * patches on a coarse grid and sets each sampled patch.</p>
+ *
+ * <p>Weather queries are height-gated: at or above the stratosphere floor
+ * ({@code particleField.stratosphere.startY}, default 720) every query reports
+ * clear weather. Localized rain builds biome patches from a noise sample at
+ * y=128, so a biome blacklist cannot express "no weather above this height" —
+ * the lock has to be applied by whoever asks, which is what this adapter is.</p>
  */
 public final class LocalizedRainCompat {
     private LocalizedRainCompat() {
     }
 
+    /**
+     * Whether weather is suppressed at this position because it lies in the stratosphere.
+     *
+     * <p>Only the query side is gated: patches still exist and can still be set
+     * through commands, they simply do not rain where nobody can see the weather.</p>
+     */
+    public static boolean weatherLockedAt(BlockPos pos) {
+        return StratosphereParticleModifier.isStratosphere(pos.getY());
+    }
+
     public static boolean isRainingAt(ServerLevel level, BlockPos pos) {
-        return WeatherManager.isRainingAt(level, pos);
+        return !weatherLockedAt(pos) && WeatherManager.isRainingAt(level, pos);
     }
 
     public static boolean isPrecipitatingAt(ServerLevel level, BlockPos pos) {
-        return WeatherManager.isPrecipitatingAt(level, pos);
+        return !weatherLockedAt(pos) && WeatherManager.isPrecipitatingAt(level, pos);
     }
 
     public static boolean isThunderingAt(ServerLevel level, BlockPos pos) {
-        return WeatherManager.isThunderingAt(level, pos);
+        return !weatherLockedAt(pos) && WeatherManager.isThunderingAt(level, pos);
     }
 
     public static boolean isThunderingRegionAt(ServerLevel level, BlockPos pos) {
-        return WeatherManager.isThunderingRegionAt(level, pos);
+        return !weatherLockedAt(pos) && WeatherManager.isThunderingRegionAt(level, pos);
     }
 
     /** 0–1 local thunder intensity; does not force precipitation or create a patch. */
     public static float thunderLevelAt(ServerLevel level, BlockPos pos) {
-        return WeatherManager.thunderLevelAt(level, pos);
+        return weatherLockedAt(pos) ? 0.0F : WeatherManager.thunderLevelAt(level, pos);
     }
 
     public static int skyDarkenAt(ServerLevel level, BlockPos pos) {
-        return WeatherManager.skyDarkenAt(level, pos);
+        return weatherLockedAt(pos) ? 0 : WeatherManager.skyDarkenAt(level, pos);
     }
 
     /** Computes the patch if needed; may trigger a flood fill. Use sparingly. */
