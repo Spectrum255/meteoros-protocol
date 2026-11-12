@@ -1,6 +1,8 @@
 package com.spectrum255.meteorosprotocol.command;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.spectrum255.meteorosprotocol.MeteorosProtocol;
 import com.spectrum255.meteorosprotocol.compat.LightHeatParticleModifier;
 import com.spectrum255.meteorosprotocol.compat.LocalizedRainCompat;
 import com.spectrum255.meteorosprotocol.compat.TemperatureProbe;
@@ -12,10 +14,16 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.Registry;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
@@ -39,7 +47,13 @@ public final class MeteorosCommands {
                 .then(Commands.literal("side").executes(ctx -> side(ctx.getSource())))
                 .then(Commands.literal("phases").executes(ctx -> phases(ctx.getSource())))
                 .then(Commands.literal("selftest").executes(ctx -> selftest(ctx.getSource())))
-                .then(Commands.literal("tank").executes(ctx -> tank(ctx.getSource()))));
+                .then(Commands.literal("tank").executes(ctx -> tank(ctx.getSource())))
+                .then(Commands.literal("biome").executes(ctx -> biome(ctx.getSource())))
+                .then(Commands.literal("stratofix")
+                        .executes(ctx -> stratofix(ctx.getSource(), 1))
+                        .then(Commands.argument("radius", IntegerArgumentType.integer(0, 16))
+                                .executes(ctx -> stratofix(ctx.getSource(),
+                                        IntegerArgumentType.getInteger(ctx, "radius"))))));
     }
 
     private static int field(CommandSourceStack source) {
@@ -309,5 +323,78 @@ public final class MeteorosCommands {
                     storage.getTotal(), storage.getTotal() / 1000.0)), false);
         }
         return 1;
+    }
+
+    /** Reports the biome at the player's feet plus the stratosphere wiring status. */
+    private static int biome(CommandSourceStack source) {
+        if (!(source.getLevel() instanceof ServerLevel level)) {
+            return 0;
+        }
+        if (!(source.getEntity() instanceof ServerPlayer player)) {
+            source.sendFailure(Component.literal("Run this command as a player."));
+            return 0;
+        }
+        BlockPos pos = player.blockPosition();
+        Registry<Biome> registry = level.registryAccess().registryOrThrow(Registries.BIOME);
+        ResourceLocation biomeId = registry.getKey(level.getBiome(pos).value());
+        boolean isStratosphere = level.getBiome(pos).is(StratosphereBiomes.STRATOSPHERE);
+        boolean registryHasBiome = registry.containsKey(StratosphereBiomes.STRATOSPHERE);
+        boolean enabled = StratosphereBiomes.enabled();
+        int startY = StratosphereBiomes.startY();
+        boolean applies = StratosphereBiomes.appliesTo(level.getChunk(pos));
+
+        source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                "biome: %s at (%d, %d, %d)", biomeId, pos.getX(), pos.getY(), pos.getZ())), false);
+        source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                "  stratosphere=%s | registry=%s | enabled=%s | startY=%d | chunkApplies=%s | dimension=%s",
+                isStratosphere, registryHasBiome, enabled, startY, applies, level.dimension().location())), false);
+        source.sendSuccess(() -> Component.literal(
+                "  hint: /meteoros stratofix <radius> rewrites loaded chunks (old saves only)"), false);
+        return 1;
+    }
+
+    /** Rewrites the stratosphere biome into already-generated chunks around the player. */
+    private static int stratofix(CommandSourceStack source, int radius) {
+        if (!(source.getLevel() instanceof ServerLevel level)) {
+            return 0;
+        }
+        if (!(source.getEntity() instanceof ServerPlayer player)) {
+            source.sendFailure(Component.literal("Run this command as a player."));
+            return 0;
+        }
+        if (!level.dimension().equals(Level.OVERWORLD)) {
+            source.sendFailure(Component.literal("stratofix only applies to the overworld."));
+            return 0;
+        }
+        if (!StratosphereBiomes.enabled()) {
+            source.sendFailure(Component.literal("Stratosphere is disabled in the config."));
+            return 0;
+        }
+        int centerX = player.chunkPosition().x;
+        int centerZ = player.chunkPosition().z;
+        int scanned = 0;
+        int rewritten = 0;
+        Registry<Biome> biomes = level.registryAccess().registryOrThrow(Registries.BIOME);
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dz = -radius; dz <= radius; dz++) {
+                LevelChunk chunk = level.getChunk(centerX + dx, centerZ + dz);
+                scanned++;
+                try {
+                    if (StratosphereBiomes.apply(chunk, biomes)) {
+                        StratosphereBiomes.syncToTracking(level, chunk);
+                        rewritten++;
+                    }
+                } catch (RuntimeException exception) {
+                    MeteorosProtocol.LOGGER.warn("stratofix failed for chunk [{}, {}]",
+                            chunk.getPos().x, chunk.getPos().z, exception);
+                }
+            }
+        }
+        int scannedFinal = scanned;
+        int rewrittenFinal = rewritten;
+        source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                "stratofix: scanned %d chunks, rewrote %d (startY=%d, radius=%d)",
+                scannedFinal, rewrittenFinal, StratosphereBiomes.startY(), radius)), false);
+        return rewritten;
     }
 }
