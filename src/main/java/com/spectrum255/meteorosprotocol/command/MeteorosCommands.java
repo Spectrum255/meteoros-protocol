@@ -3,11 +3,14 @@ package com.spectrum255.meteorosprotocol.command;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.spectrum255.localizedrain.api.WeatherType;
+import com.spectrum255.localizedrain.api.WeatherTypes;
 import com.spectrum255.meteorosprotocol.MeteorosProtocol;
 import com.spectrum255.meteorosprotocol.compat.LightHeatParticleModifier;
 import com.spectrum255.meteorosprotocol.compat.LocalizedRainCompat;
 import com.spectrum255.meteorosprotocol.compat.TemperatureProbe;
 import com.spectrum255.meteorosprotocol.compat.WeatherAdjustedField;
+import com.spectrum255.meteorosprotocol.compat.WeatherBonusConfig;
+import com.spectrum255.meteorosprotocol.compat.WeatherBonusRules;
 import com.spectrum255.meteorosprotocol.machine.MachineBlockEntity;
 import com.spectrum255.meteorosprotocol.particle.*;
 import java.util.Locale;
@@ -50,11 +53,71 @@ public final class MeteorosCommands {
                 .then(Commands.literal("selftest").executes(ctx -> selftest(ctx.getSource())))
                 .then(Commands.literal("tank").executes(ctx -> tank(ctx.getSource())))
                 .then(Commands.literal("biome").executes(ctx -> biome(ctx.getSource())))
+                .then(Commands.literal("weather")
+                        .executes(ctx -> weather(ctx.getSource()))
+                        .then(Commands.literal("reload").executes(ctx -> weatherReload(ctx.getSource()))))
                 .then(Commands.literal("stratofix")
                         .executes(ctx -> stratofix(ctx.getSource(), 1))
                         .then(Commands.argument("radius", IntegerArgumentType.integer(0, 16))
                                 .executes(ctx -> stratofix(ctx.getSource(),
                                         IntegerArgumentType.getInteger(ctx, "radius"))))));
+    }
+
+    private static int weather(CommandSourceStack source) {
+        Registry<WeatherType> registry;
+        try {
+            registry = source.getServer().registryAccess().registryOrThrow(WeatherTypes.REGISTRY_KEY);
+        } catch (RuntimeException exception) {
+            source.sendFailure(Component.literal("Weather type registry unavailable"));
+            return 0;
+        }
+        var snapshot = WeatherBonusConfig.snapshot();
+        source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                "Weather particle bonuses: enabled=%s auto_add_new_types=%s file=%s",
+                WeatherBonusConfig.enabled(), WeatherBonusConfig.autoAddNewTypes(),
+                WeatherBonusConfig.file())), false);
+        for (ResourceLocation id : new java.util.TreeSet<>(registry.keySet())) {
+            WeatherType type = registry.get(id);
+            if (type == null) {
+                continue;
+            }
+            WeatherBonusRules.Rules rules = WeatherBonusConfig.rulesFor(type);
+            String flags = (WeatherBonusConfig.enabled() ? "" : " [disabled]")
+                    + (rules == null ? " [missing]" : "");
+            String values = rules == null
+                    ? "(no rules)"
+                    : String.format(Locale.ROOT, "T%+.1f C%+.1f Aq%+.1f Ae%+.1f | charge %.1f*storm",
+                            rules.thermion(), rules.cryon(), rules.aquantum(),
+                            rules.aetheron(), rules.chargeDensity());
+            String precipitation = type.hasPrecipitation()
+                    ? type.precipitation().name()
+                    : "NONE";
+            source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                            "  %s | %s | thunder=%s | %s%s",
+                            id, precipitation, type.allowsThunder(), values, flags)), false);
+        }
+        var fileOnly = new java.util.TreeSet<>(snapshot.keySet());
+        fileOnly.removeAll(registry.keySet());
+        if (!fileOnly.isEmpty()) {
+            source.sendSuccess(() -> Component.literal("  file-only entries (not registered): "
+                    + String.join(", ", fileOnly.stream().map(ResourceLocation::toString).toList())), false);
+        }
+        return 1;
+    }
+
+    private static int weatherReload(CommandSourceStack source) {
+        try {
+            WeatherBonusConfig.reload(source.getServer());
+        } catch (RuntimeException exception) {
+            MeteorosProtocol.LOGGER.warn("Weather bonus reload failed", exception);
+            source.sendFailure(Component.literal("Weather bonus reload failed: " + exception.getMessage()));
+            return 0;
+        }
+        int loaded = WeatherBonusConfig.lastLoaded();
+        int added = WeatherBonusConfig.lastAdded();
+        source.sendSuccess(() -> Component.literal(
+                "Weather particle bonuses reloaded: " + loaded + " types, added " + added), false);
+        return 1;
     }
 
     private static int field(CommandSourceStack source) {

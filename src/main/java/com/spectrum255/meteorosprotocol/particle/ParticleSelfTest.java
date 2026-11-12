@@ -1,20 +1,28 @@
 package com.spectrum255.meteorosprotocol.particle;
 
+import com.spectrum255.localizedrain.api.WeatherType;
 import com.spectrum255.meteorosprotocol.Config;
 import com.spectrum255.meteorosprotocol.MeteorosProtocol;
 import com.spectrum255.meteorosprotocol.compat.LightHeatParticleModifier;
 import com.spectrum255.meteorosprotocol.compat.TemperatureProbe;
 import com.spectrum255.meteorosprotocol.compat.TemperatureSources;
+import com.spectrum255.meteorosprotocol.compat.WeatherBonusConfig;
+import com.spectrum255.meteorosprotocol.compat.WeatherBonusRules;
+import com.spectrum255.meteorosprotocol.compat.WeatherParticleModifier;
 import com.spectrum255.meteorosprotocol.machine.MachineBlockEntity;
 import com.spectrum255.meteorosprotocol.machine.SideChannel;
 import com.spectrum255.meteorosprotocol.machine.SideMode;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 
@@ -52,6 +60,7 @@ public final class ParticleSelfTest {
         check(failures, "number formatting", ParticleSelfTest::numberFormatting);
         check(failures, "intake loss and purifier", ParticleSelfTest::intakeAndPurifier);
         check(failures, "stratosphere", ParticleSelfTest::stratosphere);
+        check(failures, "weather bonuses", ParticleSelfTest::weatherBonuses);
         return failures;
     }
 
@@ -940,6 +949,105 @@ public final class ParticleSelfTest {
                 "stratosphere ambient at y=800 should be 252 K");
         require(near(TemperatureProbe.ambientForStratosphere(960, 720), 276.0),
                 "stratosphere ambient at y=960 should be 276 K");
+    }
+
+    private static void weatherBonuses() {
+        WeatherType rain = new WeatherType("weather.meteorosprotocol.test.rain", true,
+                Biome.Precipitation.RAIN, true);
+        WeatherType snow = new WeatherType("weather.meteorosprotocol.test.snow", true,
+                Biome.Precipitation.SNOW, true);
+        WeatherType dust = new WeatherType("weather.meteorosprotocol.test.dust", false,
+                Biome.Precipitation.NONE, false);
+        WeatherType dustThunder = new WeatherType("weather.meteorosprotocol.test.dust_thunder", false,
+                Biome.Precipitation.NONE, true);
+
+        WeatherBonusRules.Rules rainRules = WeatherBonusRules.defaultsFor(rain);
+        require(near(rainRules.thermion(), -4.0F) && near(rainRules.cryon(), 4.0F)
+                        && near(rainRules.aquantum(), 6.0F) && near(rainRules.aetheron(), 0.0F)
+                        && near(rainRules.chargeDensity(), 12.0F),
+                "rain defaults must be T-4 C+4 Aq+6 charge 12, got " + rainRules);
+        WeatherBonusRules.Rules snowRules = WeatherBonusRules.defaultsFor(snow);
+        require(near(snowRules.thermion(), -5.0F) && near(snowRules.cryon(), 5.0F)
+                        && near(snowRules.aquantum(), 4.0F)
+                        && near(snowRules.chargeDensity(), 12.0F),
+                "snow defaults must be T-5 C+5 Aq+4 (less aqueous than rain), got " + snowRules);
+        require(WeatherBonusRules.defaultsFor(dust).isZero(),
+                "a no-precipitation type without thunder must default to zero");
+        require(near(WeatherBonusRules.defaultsFor(dustThunder).chargeDensity(), 12.0F),
+                "a no-precipitation type with thunder defaults to charge 12");
+
+        FieldSample baseSample = new FieldSample(10.0F, 10.0F, 2.0F, 1.0F, 2.0F, 3.0F);
+        WeatherParticleModifier.Result applied =
+                WeatherParticleModifier.apply(baseSample, rainRules, true, 0.5F, 0.0F);
+        require(near(applied.sample().thermion(), 6.0F)
+                        && near(applied.sample().cryon(), 14.0F)
+                        && near(applied.sample().aquantum(), 8.0F)
+                        && near(applied.sample().aetheron(), 3.0F),
+                "rain rules must add their deltas to the sample");
+        require(near(applied.sample().chargeDensity(), 3.0F + 12.0F * 0.5F),
+                "charge density must scale with storm intensity");
+        require(applied.raining() && applied.thundering(),
+                "an active rainy sample must report rain and thunder");
+
+        WeatherBonusRules.Rules negative = new WeatherBonusRules.Rules(-100.0F, 0.0F, -100.0F,
+                -100.0F, 0.0F);
+        WeatherParticleModifier.Result clamped =
+                WeatherParticleModifier.apply(baseSample, negative, true, 0.0F, 0.0F);
+        require(clamped.sample().thermion() == 0.0F && clamped.sample().aquantum() == 0.0F
+                        && clamped.sample().aetheron() == 0.0F,
+                "negative deltas must clamp the reservoirs to zero");
+        require(WeatherParticleModifier.apply(baseSample, rainRules, false, 0.0F, 0.0F)
+                        .sample().equals(baseSample),
+                "inactive weather must return the sample unchanged");
+
+        Map<ResourceLocation, WeatherBonusRules.Entry> entries = new LinkedHashMap<>();
+        entries.put(ResourceLocation.fromNamespaceAndPath("localizedrain", "rain"),
+                WeatherBonusRules.Entry.fromType(rain, rainRules));
+        entries.put(ResourceLocation.fromNamespaceAndPath("localizedrain", "snow"),
+                WeatherBonusRules.Entry.fromType(snow, snowRules));
+        String text = WeatherBonusConfig.render(entries, true, true);
+        WeatherBonusConfig.Parsed parsed = WeatherBonusConfig.parse(text);
+        require(parsed.enabled() && parsed.autoAddNewTypes(), "general flags must round trip");
+        require(parsed.entries().size() == entries.size(), "all types must round trip");
+        for (Map.Entry<ResourceLocation, WeatherBonusRules.Entry> e : entries.entrySet()) {
+            WeatherBonusRules.Entry read = parsed.entries().get(e.getKey());
+            require(read != null && read.rules().equals(e.getValue().rules())
+                            && read.displayKey().equals(e.getValue().displayKey())
+                            && read.precipitation().equals(e.getValue().precipitation()),
+                    "weather entry " + e.getKey() + " must round trip, got " + read);
+        }
+
+        WeatherBonusConfig.Parsed tolerant = WeatherBonusConfig.parse("""
+                [general]
+                \tenabled = true
+                \tbogus = maybe
+                [types."example:dust"]
+                \tthermion = nope
+                \tcryon = 5.0
+                \t# comment
+                [not_a_section]
+                """);
+        WeatherBonusRules.Entry tolerantEntry = tolerant.entries()
+                .get(ResourceLocation.fromNamespaceAndPath("example", "dust"));
+        require(tolerantEntry != null && near(tolerantEntry.rules().cryon(), 5.0F)
+                        && near(tolerantEntry.rules().thermion(), 0.0F),
+                "a malformed line must not drop valid keys or throw");
+
+        Map<ResourceLocation, WeatherType> registryTypes = new LinkedHashMap<>();
+        registryTypes.put(ResourceLocation.fromNamespaceAndPath("localizedrain", "rain"), rain);
+        registryTypes.put(ResourceLocation.fromNamespaceAndPath("example", "dust"), dust);
+        WeatherBonusConfig.MergeResult merged = WeatherBonusConfig.merge(entries, registryTypes);
+        WeatherBonusRules.Entry added = merged.entries()
+                .get(ResourceLocation.fromNamespaceAndPath("example", "dust"));
+        require(merged.added() == 1 && added != null && added.rules().isZero(),
+                "a newly registered type must be added with defaults");
+        require(merged.entries().size() == 3, "merging must keep existing file entries");
+
+        WeatherBonusConfig.MergeResult frozen = WeatherBonusConfig.merge(entries, registryTypes, false);
+        require(frozen.added() == 0
+                        && frozen.entries().size() == entries.size()
+                        && frozen.entries().get(ResourceLocation.fromNamespaceAndPath("example", "dust")) == null,
+                "auto_add_new_types = false must leave the file untouched");
     }
 
     private static FieldSample sampleAt(FieldSample base, float y, int skyDarken, boolean skyVisible,
