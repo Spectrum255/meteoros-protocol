@@ -132,8 +132,8 @@ dependencies {
     // implementation files("libs/coolmod-${mc_version}-${coolmod_version}.jar")
 
     // Required prerequisite: Localized rain (local jar, bundled into this mod)
-    implementation files("libs/localizedrain-0.2.1.jar")
-    jarJar files("libs/localizedrain-0.2.1.jar")
+    implementation files("libs/localizedrain-0.3.1.jar")
+    jarJar files("libs/localizedrain-0.3.1.jar")
 
     // Optional Jade integration. Compiled against Jade but not bundled; the
     // integration class is only discovered when Jade itself is installed.
