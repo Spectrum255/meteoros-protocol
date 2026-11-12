@@ -18,6 +18,7 @@ import net.minecraft.world.level.biome.Climate;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
+import net.minecraft.world.level.chunk.PalettedContainer;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -27,18 +28,19 @@ import org.jetbrains.annotations.Nullable;
  * <p>Two entry points share this code:</p>
  * <ul>
  *   <li>{@code mixin/StratosphereBiomeMixin} - injects into
- *       {@code ChunkGenerator#createBiomes}, so <em>newly generated</em> chunks
- *       come out of worldgen already carrying the biome;</li>
+ *       {@code NoiseBasedChunkGenerator#createBiomes}, so <em>newly generated</em>
+ *       chunks come out of worldgen already carrying the biome;</li>
  *   <li>{@code particle/StratosphereChunkEvents} - listens to
  *       {@code ChunkEvent.Load}, so chunks generated before this mod (or before
  *       the configuration existed) are retrofitted when they load.</li>
  * </ul>
  *
- * <p>1.21.1 has no {@code ChunkAccess#setNoiseBiome}; biomes are written through
- * {@link ChunkAccess#fillBiomesFromNoise(BiomeResolver, Climate.Sampler)}. The
- * method therefore snapshots the existing biome palette, then refills the chunk
- * through a resolver that returns stratosphere above {@code startY} and the
- * snapshot below it.</p>
+ * <p>1.21.1 has no {@code ChunkAccess#setNoiseBiome}, but each chunk section
+ * exposes its biome palette, so the biome is written quart by quart into the
+ * sections that sit at or above {@code startY}. Only those sections are touched,
+ * which keeps both worldgen and chunk-load retrofits cheap. If a section does not
+ * expose a mutable palette, the code falls back to a full
+ * {@link ChunkAccess#fillBiomesFromNoise(BiomeResolver, Climate.Sampler)} refill.</p>
  */
 public final class StratosphereBiomes {
     public static final ResourceKey<Biome> STRATOSPHERE = ResourceKey.create(Registries.BIOME,
@@ -107,6 +109,48 @@ public final class StratosphereBiomes {
         }
 
         int firstStratosphereQuart = firstStratosphereQuart();
+        int firstSection = Math.max(0,
+                chunk.getSectionIndexFromSectionY(QuartPos.toSection(firstStratosphereQuart)));
+        boolean changed = false;
+        for (int sectionIndex = firstSection; sectionIndex < sections.length; sectionIndex++) {
+            LevelChunkSection section = sections[sectionIndex];
+            if (section == null) {
+                continue;
+            }
+            if (!(section.getBiomes() instanceof PalettedContainer<?> raw)) {
+                // Unusual section implementation: fall back to the old full refill.
+                return refillWholeChunk(chunk, biomes, stratosphere, firstStratosphereQuart);
+            }
+            @SuppressWarnings("unchecked")
+            PalettedContainer<Holder<Biome>> palette = (PalettedContainer<Holder<Biome>>) raw;
+            int baseQuartY = chunk.getSectionYFromSectionIndex(sectionIndex) * 4;
+            for (int y = 0; y < 4; y++) {
+                if (baseQuartY + y < firstStratosphereQuart) {
+                    continue;
+                }
+                for (int x = 0; x < 4; x++) {
+                    for (int z = 0; z < 4; z++) {
+                        if (palette.get(x, y, z).value() != stratosphere.value()) {
+                            palette.set(x, y, z, stratosphere);
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        }
+        if (changed) {
+            dirty(chunk);
+        }
+        return changed;
+    }
+
+    /**
+     * Slow fallback used only when a section does not expose a mutable palette:
+     * snapshots the whole chunk and refills it through a resolver.
+     */
+    private static boolean refillWholeChunk(ChunkAccess chunk, Registry<Biome> biomes,
+                                            Holder.Reference<Biome> stratosphere, int firstStratosphereQuart) {
+        LevelChunkSection[] sections = chunk.getSections();
         Holder<Biome>[] snapshot = newBiomeSnapshot(sections.length);
         for (int sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
             LevelChunkSection section = sections[sectionIndex];
@@ -121,7 +165,6 @@ public final class StratosphereBiomes {
                 }
             }
         }
-
         Holder<Biome> fallback = biomes.getHolderOrThrow(Biomes.PLAINS);
         BiomeResolver resolver = (x, y, z, sampler) -> {
             if (y >= firstStratosphereQuart) {
@@ -134,7 +177,6 @@ public final class StratosphereBiomes {
             Holder<Biome> previous = snapshot[snapshotIndex(sectionIndex, x & 3, y & 3, z & 3)];
             return previous != null ? previous : fallback;
         };
-        // The sampler is only forwarded to the resolver, which ignores it.
         chunk.fillBiomesFromNoise(resolver, null);
         dirty(chunk);
         return true;
