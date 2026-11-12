@@ -6,11 +6,14 @@ import java.util.Set;
 import com.spectrum255.localizedrain.weather.BiomePatches;
 import com.spectrum255.localizedrain.weather.WeatherData;
 import com.spectrum255.localizedrain.weather.WeatherManager;
-import com.spectrum255.meteorosprotocol.particle.StratosphereParticleModifier;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.biome.Biome;
 
 /**
  * Thin adapter around Localized rain's public API.
@@ -19,49 +22,60 @@ import net.minecraft.server.level.ServerLevel;
  * connected biome patch, not per rectangle; {@link #setWeatherInArea} samples
  * patches on a coarse grid and sets each sampled patch.</p>
  *
- * <p>Weather queries are height-gated: at or above the stratosphere floor
- * ({@code particleField.stratosphere.startY}, default 720) every query reports
- * clear weather. Localized rain builds biome patches from a noise sample at
- * y=128, so a biome blacklist cannot express "no weather above this height" —
- * the lock has to be applied by whoever asks, which is what this adapter is.</p>
+ * <p>Weather queries are biome-gated: inside {@code meteorosprotocol:stratosphere}
+ * every query reports clear weather. That biome only exists above the stratosphere
+ * floor (default y &gt; 720), so the gate follows the floor automatically.</p>
  */
 public final class LocalizedRainCompat {
+    /** The stratosphere biome; the weather lock keys on this registry entry. */
+    public static final ResourceKey<Biome> STRATOSPHERE_BIOME = ResourceKey.create(
+            Registries.BIOME,
+            ResourceLocation.fromNamespaceAndPath("meteorosprotocol", "stratosphere"));
+
     private LocalizedRainCompat() {
     }
 
     /**
-     * Whether weather is suppressed at this position because it lies in the stratosphere.
+     * Whether weather is suppressed at this position because the position sits in the
+     * stratosphere biome.
      *
-     * <p>Only the query side is gated: patches still exist and can still be set
-     * through commands, they simply do not rain where nobody can see the weather.</p>
+     * <p>The lock keys on the biome in the registry at the queried position
+     * ({@code meteorosprotocol:stratosphere}), not on a height constant: the biome only
+     * exists above the stratosphere floor, so any future change to that floor follows
+     * automatically. This is also why the prerequisite's biome blacklist cannot express
+     * it — Localized rain resolves a patch's biome from a noise sample at y=128, where
+     * the stratosphere biome never appears.</p>
+     *
+     * <p>Only the query side is gated: patches still exist and can still be set through
+     * commands, they simply do not rain where nobody can see the weather.</p>
      */
-    public static boolean weatherLockedAt(BlockPos pos) {
-        return StratosphereParticleModifier.isStratosphere(pos.getY());
+    public static boolean weatherLockedAt(ServerLevel level, BlockPos pos) {
+        return level.getBiome(pos).is(STRATOSPHERE_BIOME);
     }
 
     public static boolean isRainingAt(ServerLevel level, BlockPos pos) {
-        return !weatherLockedAt(pos) && WeatherManager.isRainingAt(level, pos);
+        return !weatherLockedAt(level, pos) && WeatherManager.isRainingAt(level, pos);
     }
 
     public static boolean isPrecipitatingAt(ServerLevel level, BlockPos pos) {
-        return !weatherLockedAt(pos) && WeatherManager.isPrecipitatingAt(level, pos);
+        return !weatherLockedAt(level, pos) && WeatherManager.isPrecipitatingAt(level, pos);
     }
 
     public static boolean isThunderingAt(ServerLevel level, BlockPos pos) {
-        return !weatherLockedAt(pos) && WeatherManager.isThunderingAt(level, pos);
+        return !weatherLockedAt(level, pos) && WeatherManager.isThunderingAt(level, pos);
     }
 
     public static boolean isThunderingRegionAt(ServerLevel level, BlockPos pos) {
-        return !weatherLockedAt(pos) && WeatherManager.isThunderingRegionAt(level, pos);
+        return !weatherLockedAt(level, pos) && WeatherManager.isThunderingRegionAt(level, pos);
     }
 
     /** 0–1 local thunder intensity; does not force precipitation or create a patch. */
     public static float thunderLevelAt(ServerLevel level, BlockPos pos) {
-        return weatherLockedAt(pos) ? 0.0F : WeatherManager.thunderLevelAt(level, pos);
+        return weatherLockedAt(level, pos) ? 0.0F : WeatherManager.thunderLevelAt(level, pos);
     }
 
     public static int skyDarkenAt(ServerLevel level, BlockPos pos) {
-        return weatherLockedAt(pos) ? 0 : WeatherManager.skyDarkenAt(level, pos);
+        return weatherLockedAt(level, pos) ? 0 : WeatherManager.skyDarkenAt(level, pos);
     }
 
     /** Computes the patch if needed; may trigger a flood fill. Use sparingly. */
