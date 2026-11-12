@@ -93,7 +93,7 @@ config="${mod_id}.mixins.json"
 [[dependencies.${mod_id}]]
     modId="localizedrain"
     type="required"
-    versionRange="[1.2.0,)"
+    versionRange="[0.1.0,)"
     ordering="NONE"
     side="BOTH"
 
