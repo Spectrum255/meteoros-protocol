@@ -3,6 +3,7 @@ package com.spectrum255.meteorosprotocol.particle;
 import com.spectrum255.meteorosprotocol.MeteorosProtocol;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.biome.Biome;
@@ -10,6 +11,7 @@ import net.minecraft.world.level.chunk.ChunkAccess;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.level.ChunkEvent;
+import net.neoforged.neoforge.event.server.ServerStartedEvent;
 
 /**
  * Retrofits the stratosphere biome into chunks that already exist in a save.
@@ -23,6 +25,25 @@ import net.neoforged.neoforge.event.level.ChunkEvent;
 @EventBusSubscriber(modid = MeteorosProtocol.MODID)
 public final class StratosphereChunkEvents {
     private StratosphereChunkEvents() {
+    }
+
+    @SubscribeEvent
+    public static void onServerStarted(ServerStartedEvent event) {
+        MinecraftServer server = event.getServer();
+        ServerLevel level = server.overworld();
+        boolean biomePresent;
+        try {
+            biomePresent = level.registryAccess().registryOrThrow(Registries.BIOME)
+                    .containsKey(StratosphereBiomes.STRATOSPHERE.location());
+        } catch (RuntimeException exception) {
+            biomePresent = false;
+        }
+        int startY = StratosphereParticleModifier.startY();
+        MeteorosProtocol.LOGGER.info(
+                "Stratosphere diagnostics: enabled={} startY={} minY={} height={} maxBuildHeight={} biomePresent={} applies={}",
+                StratosphereParticleModifier.enabled(), startY,
+                level.getMinBuildHeight(), level.getHeight(), level.getMaxBuildHeight(),
+                biomePresent, level.getMaxBuildHeight() - 1 > startY);
     }
 
     @SubscribeEvent

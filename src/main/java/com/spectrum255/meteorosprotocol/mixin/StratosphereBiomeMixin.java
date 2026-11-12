@@ -9,7 +9,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.StructureManager;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.chunk.ChunkAccess;
-import net.minecraft.world.level.chunk.ChunkGenerator;
+import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
 import net.minecraft.world.level.levelgen.RandomState;
 import net.minecraft.world.level.levelgen.blending.Blender;
 import net.neoforged.neoforge.server.ServerLifecycleHooks;
@@ -27,8 +27,14 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * injector alone cannot retrofit an old world; see
  * {@code particle/StratosphereChunkEvents} and {@code /meteoros stratofix} for
  * that path.</p>
+ *
+ * <p>The target is {@link NoiseBasedChunkGenerator} rather than
+ * {@link net.minecraft.world.level.chunk.ChunkGenerator}: the noise generator
+ * overrides {@code createBiomes} with its own body, so an injection on the
+ * parent class never runs for the overworld (that was the 0.0.36 bug — the
+ * stratosphere biome never appeared even in a brand new world).</p>
  */
-@Mixin(ChunkGenerator.class)
+@Mixin(NoiseBasedChunkGenerator.class)
 public abstract class StratosphereBiomeMixin {
     @Inject(method = "createBiomes", at = @At("RETURN"), cancellable = true)
     private void meteorosprotocol$forceStratosphere(RandomState randomState, Blender blender,
