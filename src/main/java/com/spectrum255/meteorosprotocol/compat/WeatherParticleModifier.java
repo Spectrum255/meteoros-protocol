@@ -6,7 +6,6 @@ import com.spectrum255.meteorosprotocol.particle.FieldSample;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
-import net.minecraft.world.level.biome.Biome;
 
 /**
  * Weather adjustment for the v2 field.
@@ -37,8 +36,10 @@ public final class WeatherParticleModifier {
         if (base == null) {
             throw new IllegalArgumentException("base");
         }
-        boolean raining = LocalizedRainCompat.isPrecipitatingAt(level, pos)
-                && level.getBiome(pos).value().getPrecipitationAt(pos) == Biome.Precipitation.RAIN;
+        // Prefer the registered weather type over the biome: since Localized rain 0.2.x a
+        // patch carries a WeatherType, so add-on types (for example sandstorms) and vanilla
+        // rain take the same code path. Snow stays inert, matching the v2 field table.
+        boolean raining = LocalizedRainCompat.isRainFallingAt(level, pos);
         float storm = Mth.clamp(LocalizedRainCompat.thunderLevelAt(level, pos), 0.0F, 1.0F);
         float h = (float) Mth.clamp(
                 (pos.getY() - Config.PF_H_BASE.get()) / Config.PF_H_RANGE.get(),

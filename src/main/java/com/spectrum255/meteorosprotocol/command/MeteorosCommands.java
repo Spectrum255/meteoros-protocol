@@ -2,6 +2,7 @@ package com.spectrum255.meteorosprotocol.command;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.spectrum255.localizedrain.api.WeatherType;
 import com.spectrum255.meteorosprotocol.MeteorosProtocol;
 import com.spectrum255.meteorosprotocol.compat.LightHeatParticleModifier;
 import com.spectrum255.meteorosprotocol.compat.LocalizedRainCompat;
@@ -93,6 +94,17 @@ public final class MeteorosCommands {
         boolean precipitating = LocalizedRainCompat.isPrecipitatingAt(level, pos);
         int skyEffective = LightHeatParticleModifier.skyEffective(skyLight, skyDarken, precipitating);
         float heat = LightHeatParticleModifier.heatFor(blockLight, skyEffective);
+        WeatherType weatherType = LocalizedRainCompat.weatherTypeAt(level, pos);
+        String precipitationName = weatherType.hasPrecipitation()
+                ? weatherType.precipitation().name()
+                : "no precipitation";
+        source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                "  weather: %s (%s) | rain %s | thunder %s | sky darken %d | locked %s",
+                weatherType.displayKey(), precipitationName,
+                LocalizedRainCompat.isRainingAt(level, pos),
+                LocalizedRainCompat.isThunderingAt(level, pos),
+                LocalizedRainCompat.skyDarkenAt(level, pos),
+                LocalizedRainCompat.weatherLockedAt(level, pos))), false);
         source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
                 "  light: block %d + sky %d (darken %d) -> +%.1f T",
                 blockLight, skyLight, skyDarken, heat)), false);
